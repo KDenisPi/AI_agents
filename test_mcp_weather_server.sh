@@ -25,14 +25,23 @@ HOST="http://localhost:$PORT"
 WORKDIR="$(mktemp -d)"
 SERVER_LOG="$WORKDIR/server.log"
 SSE_LOG="$WORKDIR/sse_stream.log"
+RUN_LOG="$SCRIPT_DIR/test_mcp_weather_server.log"
 FAIL=0
+
+# Save the full run output (PASS/FAIL summary + full server responses) to a
+# log file, in addition to printing it to the screen.
+exec > >(tee "$RUN_LOG") 2>&1
 
 echo "$SERVER_LOG"
 
 cleanup() {
   [[ -n "${SSE_PID:-}" ]] && kill "$SSE_PID" 2>/dev/null
   [[ -n "${SERVER_PID:-}" ]] && kill "$SERVER_PID" 2>/dev/null
-  wait 2>/dev/null
+  # Only wait on the processes we started ourselves - a bare `wait` would
+  # also block on the `tee` job from the `exec > >(tee ...)` redirect above,
+  # which never exits until our own stdout closes (deadlock on script exit).
+  [[ -n "${SSE_PID:-}" ]] && wait "$SSE_PID" 2>/dev/null
+  [[ -n "${SERVER_PID:-}" ]] && wait "$SERVER_PID" 2>/dev/null
   rm -rf "$WORKDIR"
 }
 trap cleanup EXIT
@@ -120,4 +129,5 @@ else
 fi
 
 cp "$SERVER_LOG" "./server.log"
+echo "Full run output saved to: $RUN_LOG"
 exit "$FAIL"
