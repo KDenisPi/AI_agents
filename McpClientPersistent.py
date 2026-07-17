@@ -16,12 +16,11 @@ class MCPClientPersistent:
     multiple tool calls instead of re-handshaking every time.
 
     Usage:
-        client = MCPClientPersistent("http://pi-host:8000/ollama/sse")
-        await client.connect()
-        tools = await client.list_tools()
-        result = await client.call_tool("list_models", {})
-        ... call more tools as needed, session stays open ...
-        await client.close()
+        async with MCPClientPersistent("http://pi-host:8000/ollama/sse") as client:
+            tools = await client.list_tools()
+            result = await client.call_tool("list_models", {})
+            ... call more tools as needed, session stays open ...
+        # connect()/close() also work directly if you need to manage lifetime by hand
     """
 
     def __init__(self, server_url: str):
@@ -29,6 +28,7 @@ class MCPClientPersistent:
         self._session_id: str | None = None
         self._session: ClientSession | None = None
         self._stack = AsyncExitStack()
+        self._tools: list = []
 
     @property
     def session_id(self) -> str:
@@ -44,6 +44,13 @@ class MCPClientPersistent:
         """Return True if the session is open and active."""
         return self._session is not None
 
+    @property
+    def tools(self) -> list:
+        """Return the list of tools available in the session."""
+        if len(self._tools) == 0:
+            self.list_tools()
+        return self._tools
+
     async def connect(self):
         read, write = await self._stack.enter_async_context(
             sse_client(self.server_url, on_session_created=self._on_session_created)
@@ -55,7 +62,8 @@ class MCPClientPersistent:
         self._session_id = session_id  # server assigns this once the SSE endpoint event arrives
 
     async def list_tools(self):
-        return await self._session.list_tools()
+        self._tools = await self._session.list_tools()
+        return self._tools
 
     async def call_tool(self, name: str, arguments: dict):
         result = await self._session.call_tool(name, arguments=arguments)
@@ -65,20 +73,24 @@ class MCPClientPersistent:
         await self._stack.aclose()
         self._session = None
 
+    async def __aenter__(self):
+        await self.connect()
+        return self
+
+    async def __aexit__(self, *exc_info):
+        await self.close()
+
 
 async def demo():
-    client = MCPClientPersistent("http://<pi-ip>:8000/ollama/sse")
-    await client.connect()
-    print("Session ID:", client.session_id)
+    async with MCPClientPersistent("http://<pi-ip>:8000/ollama/sse") as client:
+        print("Session ID:", client.session_id)
 
-    tools = await client.list_tools()
-    print("Tools:", [t.name for t in tools.tools])
+        tools = await client.list_tools()
+        print("Tools:", [t.name for t in tools.tools])
 
-    # Reuses the same handshake for multiple calls - no re-init cost
-    print(await client.call_tool("list_models", {}))
-    print(await client.call_tool("list_models", {}))
-
-    await client.close()
+        # Reuses the same handshake for multiple calls - no re-init cost
+        print(await client.call_tool("list_models", {}))
+        print(await client.call_tool("list_models", {}))
 
 
 if __name__ == "__main__":
