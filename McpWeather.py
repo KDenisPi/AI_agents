@@ -15,12 +15,13 @@ class McpWeatherServer:
     """
     Base template for an MCP server.
     """
-    def __init__(self, name: str = "mcp-weather-server"):
+    def __init__(self, name: str = "mcp-weather-server", dry_run: bool = False):
         self.name = name
         self.server = Server(name)
         self._register_handlers()
         self._base_path = "/weather"
         self._http_client = MyHttpClient("http://192.168.1.7:8080/api/status")
+        self._dry_run = dry_run
 
     @property
     def mcp_server(self) -> Server:
@@ -29,6 +30,10 @@ class McpWeatherServer:
     @property
     def base_path(self) -> str:
         return self._base_path
+
+    @property
+    def dry_run(self) -> bool:
+        return self._dry_run
 
     def _register_handlers(self):
         @self.server.list_tools()
@@ -68,5 +73,7 @@ class McpWeatherServer:
 
 
     async def _get_weather_info(self) -> str:
+        if self.dry_run:
+            return "{}"
         result = await self._http_client.request()
         return result
