@@ -43,10 +43,10 @@ class MyHttpClient:
                 else session.post(self.url, json=self._data)  as response:
                     # Await the response body text or .json() 
                     data = await response.text()
-                    print(f"Fetched {self.url} with status: {response.status}")
+                    logger.info(f"Fetched {self.url} with status: {response.status}")
                     return data
         except Exception as e:
-            print(f"Error fetching {self.url}: {e}")
+            logger.error(f"Error fetching {self.url}: {e}")
             return None
     
     async def _req(self) -> Any:
