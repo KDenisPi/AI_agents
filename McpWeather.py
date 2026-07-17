@@ -6,8 +6,10 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
+from HttpClient import MyHttpClient
+
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("my-mcp-server")
+logger = logging.getLogger("mcp-weather")
 
 class McpWeatherServer:
     """
@@ -18,6 +20,7 @@ class McpWeatherServer:
         self.server = Server(name)
         self._register_handlers()
         self._base_path = "/weather"
+        self._http_client = MyHttpClient("http://192.168.1.7:8080/api/status")
 
     @property
     def mcp_server(self) -> Server:
@@ -53,7 +56,7 @@ class McpWeatherServer:
     ) -> list[TextContent]:
         try:
             if tool_name == "weather_info":
-                result = self._get_weather_info()
+                result = await self._get_weather_info()
             else:
                 raise ValueError(f"Unknown tool: {tool_name}")
 
@@ -64,6 +67,6 @@ class McpWeatherServer:
             return [TextContent(type="text", text=f"Error: {e}")]
 
 
-    def _get_weather_info(self) -> str:
-        # Placeholder for actual weather info retrieval logic
-        return "Weather info: Sunny, 25°C"
+    async def _get_weather_info(self) -> str:
+        result = await self._http_client.request()
+        return result
