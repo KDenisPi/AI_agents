@@ -16,6 +16,10 @@ rest of the agent never writes SQL directly:
 format_current/format_stats/format_history render those results as compact
 text, meant to be dropped straight into an LLM prompt.
 
+outside_locations/inside_locations are location names split by the
+location.outside flag, loaded lazily and cached; refresh_locations()
+reloads them from the `location` table.
+
 pymysql is blocking, same as WeatherDb.py - call these through
 asyncio.to_thread from async code.
 """
@@ -117,6 +121,8 @@ class MetricStorage:
     def __init__(self, config: Config):
         self._config = config
         self._connection: pymysql.Connection | None = None
+        self._outside_locations: list[str] | None = None
+        self._inside_locations: list[str] | None = None
 
     def _connect(self) -> pymysql.Connection:
         """Live connection, reconnecting if the server dropped us."""
@@ -187,6 +193,31 @@ class MetricStorage:
                     sensor_name=row["sensor_name"],
                 )
         return current
+
+    @property
+    def outside_locations(self) -> list[str]:
+        """Location names with outside=1, loaded lazily and cached."""
+        if self._outside_locations is None:
+            self.refresh_locations()
+        return list(self._outside_locations)
+
+    @property
+    def inside_locations(self) -> list[str]:
+        """Location names with outside=0/NULL, loaded lazily and cached."""
+        if self._inside_locations is None:
+            self.refresh_locations()
+        return list(self._inside_locations)
+
+    def refresh_locations(self) -> None:
+        """Reload outside_locations/inside_locations from the `location`
+        table - call this if locations may have been added/changed since
+        the lists were last loaded."""
+        outside: list[str] = []
+        inside: list[str] = []
+        for row in self._query("SELECT location, outside FROM location", ()):
+            (outside if row["outside"] else inside).append(row["location"])
+        self._outside_locations = outside
+        self._inside_locations = inside
 
     def get_stats(
         self, metric: str, period: timedelta, locations: list[str] | None = None
