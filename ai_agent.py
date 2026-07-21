@@ -16,6 +16,9 @@ rest of the agent never writes SQL directly:
 format_current/format_stats/format_history render those results as compact
 text, meant to be dropped straight into an LLM prompt.
 
+AiAgent ties MetricStorage to two OllamaClient instances (model_small,
+model_large) built from Config's Ollama settings.
+
 pymysql is blocking, same as WeatherDb.py - call these through
 asyncio.to_thread from async code.
 """
@@ -27,6 +30,7 @@ from datetime import datetime, timedelta
 import pymysql
 
 from Config import Config
+from OllamaClient import OllamaClient
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai-agent")
@@ -295,21 +299,43 @@ class MetricStorage:
             self._connection = None
 
 
+class AiAgent:
+    """
+    Ties the storage layer to two Ollama models on the same host - a small
+    one for cheap/frequent calls, a large one for anything that needs more
+    reasoning.
+
+    Usage:
+        agent = AiAgent(config)
+        agent.storage.get_current(["Weather station"])
+        agent.model_small.chat("...")
+        agent.close()
+    """
+
+    def __init__(self, config: Config):
+        self.storage = MetricStorage(config)
+        self.model_small = OllamaClient(config.ollama_url, config.pllama_model_1)
+        self.model_large = OllamaClient(config.ollama_url, config.pllama_model_2)
+
+    def close(self) -> None:
+        self.storage.close()
+
+
 def demo():
     config = Config.from_env()
-    storage = MetricStorage(config)
+    agent = AiAgent(config)
     try:
         location = config.weather_location_name
         print("-- get_current() (all locations) --")
-        print(format_current(storage.get_current()))
+        print(format_current(agent.storage.get_current()))
 
         print("\n-- get_stats_last_hours('temperature', 24) (all locations) --")
-        print(format_stats(storage.get_stats_last_hours("temperature", 24)))
+        print(format_stats(agent.storage.get_stats_last_hours("temperature", 24)))
 
         print(f"\n-- get_history_last_hours('temperature', 1, locations=[{location!r}]) --")
-        print(format_history(storage.get_history_last_hours("temperature", 1, locations=[location])))
+        print(format_history(agent.storage.get_history_last_hours("temperature", 1, locations=[location])))
     finally:
-        storage.close()
+        agent.close()
 
 
 if __name__ == "__main__":
