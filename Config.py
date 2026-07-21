@@ -39,6 +39,12 @@ class Config:
     weather_location_name: str = "Weather station"
     weather_location_outside: bool = False
 
+    # --- Ollama ---
+    ollama_url: str = "http://pi-host:11434"
+    pllama_model_1: str = "llama3.2"
+    pllama_model_2: str = "llama3.2"
+    pllama_model_3: str = "llama3.2"
+
     # --- Scheduling ---
     interval_seconds: int = 600
 
@@ -86,6 +92,10 @@ class Config:
             weather_location_outside=flag(
                 "WEATHER_LOCATION_OUTSIDE", defaults.weather_location_outside
             ),
+            ollama_url=text("OLLAMA_URL", defaults.ollama_url),
+            pllama_model_1=text("OLLAMA_MODEL_1", defaults.pllama_model_1),
+            pllama_model_2=text("OLLAMA_MODEL_2", defaults.pllama_model_2),
+            pllama_model_3=text("OLLAMA_MODEL_3", defaults.pllama_model_3),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
             dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),
