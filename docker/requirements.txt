@@ -1,0 +1,13 @@
+# Third-party packages used by this project, for a Python 3.12 container.
+# Unpinned - pip resolves the latest version at build time.
+
+mcp
+starlette
+uvicorn
+python-dotenv
+requests
+ollama
+sounddevice
+vosk
+aiohttp
+pymysql
