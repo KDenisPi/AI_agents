@@ -8,6 +8,8 @@ rest of the agent never writes SQL directly:
     get_current([locations], [metrics])       -> latest value per location/metric
     get_stats(metric, period, [locations])    -> min/max/avg/count per location
     get_history(metric, start, end, [locations]) -> raw readings per location
+    get_history_last_hours(metric, hours, [locations]) -> get_history, last N hours
+    get_history_last_days(metric, days, [locations])   -> get_history, last N days
 
 pymysql is blocking, same as WeatherDb.py - call these through
 asyncio.to_thread from async code.
@@ -207,6 +209,20 @@ class MetricStorage:
             )
         return history
 
+    def get_history_last_hours(
+        self, metric: str, hours: int, locations: list[str] | None = None
+    ) -> dict[str, list[HistoryPoint]]:
+        """get_history over the last `hours`, ending now."""
+        end = datetime.now()
+        return self.get_history(metric, end - timedelta(hours=hours), end, locations)
+
+    def get_history_last_days(
+        self, metric: str, days: int, locations: list[str] | None = None
+    ) -> dict[str, list[HistoryPoint]]:
+        """get_history over the last `days`, ending now."""
+        end = datetime.now()
+        return self.get_history(metric, end - timedelta(days=days), end, locations)
+
     def _query(self, query: str, args: tuple) -> list[dict]:
         connection = self._connect()
         with connection.cursor() as cursor:
@@ -234,10 +250,8 @@ def demo():
         for loc, stats in storage.get_stats("temperature", timedelta(hours=24)).items():
             print(f"  {loc}: {stats}")
 
-        print(f"-- get_history('temperature', last 1h, locations=[{location!r}]) --")
-        end = datetime.now()
-        start = end - timedelta(hours=1)
-        history = storage.get_history("temperature", start, end, locations=[location])
+        print(f"-- get_history_last_hours('temperature', 1, locations=[{location!r}]) --")
+        history = storage.get_history_last_hours("temperature", 1, locations=[location])
         for point in history.get(location, []):
             print(f"  {point.taken_at}: {point.value}")
     finally:
