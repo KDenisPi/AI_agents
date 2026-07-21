@@ -10,6 +10,7 @@ SET @OLD_SQL_MODE=@@SQL_MODE, SQL_MODE='ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,N
 -- -----------------------------------------------------
 -- Schema weather
 -- -----------------------------------------------------
+DROP DATABASE IF EXISTS weather;
 
 -- -----------------------------------------------------
 -- Schema weather
@@ -86,16 +87,21 @@ CREATE TABLE IF NOT EXISTS `weather`.`metering` (
 ENGINE = InnoDB
 COMMENT = 'Keep metering values from sensors';
 
+DROP USER IF EXISTS 'weather'@'%';
+DROP USER IF EXISTS 'weather_read'@'%';
+DROP USER IF EXISTS 'weather_admin'@'%';
+DROP USER IF EXISTS 'weather_admin'@'127.0.0.1';
+
 CREATE USER 'weather' IDENTIFIED BY 'Dk94404!';
 
 GRANT SELECT, INSERT, TRIGGER, UPDATE, DELETE ON TABLE `weather`.* TO 'weather';
-GRANT EXECUTE ON ROUTINE `weather`.* TO 'weather';
+GRANT EXECUTE ON `weather`.* TO 'weather';
 CREATE USER 'weather_read' IDENTIFIED BY 'DkRead94404!';
 
 GRANT SELECT ON TABLE `weather`.* TO 'weather_read';
-CREATE USER 'weather_admin' IDENTIFIED BY 'Dk94404!';
+CREATE USER 'weather_admin'@'127.0.0.1' IDENTIFIED BY 'Dk94404!';
 
-GRANT ALL ON `weather`.* TO 'weather_admin';
+GRANT ALL ON `weather`.* TO 'weather_admin'@'127.0.0.1';
 
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;
@@ -111,6 +117,8 @@ INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (2, 'humidity');
 INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (3, 'CO2');
 INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (4, 'TVOC');
 INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (5, 'battery');
+INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (6, 'pressure');
+INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (7, 'illuminance');
 
 COMMIT;
 
