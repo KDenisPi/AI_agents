@@ -5,9 +5,9 @@ MetricStorage wraps the metering data collected by Collector.py (see
 db/weather.sql for the schema) behind three read-only functions, so the
 rest of the agent never writes SQL directly:
 
-    get_current([locations], [metrics])    -> latest value per location/metric
-    get_stats(location, metric, period)    -> min/max/avg/count over a window
-    get_history(location, metric, start, end) -> raw readings in a window
+    get_current([locations], [metrics])       -> latest value per location/metric
+    get_stats(metric, period, [locations])    -> min/max/avg/count per location
+    get_history(metric, start, end, [locations]) -> raw readings per location
 
 pymysql is blocking, same as WeatherDb.py - call these through
 asyncio.to_thread from async code.
@@ -139,49 +139,73 @@ class MetricStorage:
         return current
 
     def get_stats(
-        self, location: str, metric: str, period: timedelta
-    ) -> MetricStats | None:
-        """Min/max/avg/count of `metric` at `location` over the last
-        `period`, ending now. None if there is no data in that window."""
+        self, metric: str, period: timedelta, locations: list[str] | None = None
+    ) -> dict[str, MetricStats]:
+        """Min/max/avg/count of `metric` over the last `period`, ending now,
+        keyed by location. Defaults to every location with data in that
+        window; pass `locations` to narrow it. A location with no readings
+        in the window is simply absent from the result."""
         query = (
-            "SELECT MIN(me.value) AS min, MAX(me.value) AS max, "
+            "SELECT l.location AS location, MIN(me.value) AS min, MAX(me.value) AS max, "
             "AVG(me.value) AS avg, COUNT(*) AS count "
             "FROM metering me "
             "JOIN metric m ON m.metricid = me.metric_metricid "
             "JOIN sensor s ON s.sensorid = me.sensor_sensorid "
             "JOIN location l ON l.locid = s.location_locid "
-            "WHERE l.location = %s AND m.metric = %s AND me.mdatatime >= %s"
+            "WHERE m.metric = %s AND me.mdatatime >= %s"
         )
         since = datetime.now() - period
-        rows = self._query(query, (location, metric, since))
-        row = rows[0] if rows else None
-        if not row or not row["count"]:
-            return None
-        return MetricStats(
-            metric=metric,
-            min=row["min"],
-            max=row["max"],
-            avg=row["avg"],
-            count=row["count"],
-        )
+        args: list = [metric, since]
+        if locations:
+            placeholders = ", ".join(["%s"] * len(locations))
+            query += f" AND l.location IN ({placeholders})"
+            args.extend(locations)
+        query += " GROUP BY l.location"
+
+        stats: dict[str, MetricStats] = {}
+        for row in self._query(query, tuple(args)):
+            if not row["count"]:
+                continue
+            stats[row["location"]] = MetricStats(
+                metric=metric,
+                min=row["min"],
+                max=row["max"],
+                avg=row["avg"],
+                count=row["count"],
+            )
+        return stats
 
     def get_history(
-        self, location: str, metric: str, start: datetime, end: datetime
-    ) -> list[HistoryPoint]:
-        """Every reading of `metric` at `location` between start and end
-        (inclusive), oldest first."""
+        self,
+        metric: str,
+        start: datetime,
+        end: datetime,
+        locations: list[str] | None = None,
+    ) -> dict[str, list[HistoryPoint]]:
+        """Every reading of `metric` between start and end (inclusive),
+        oldest first, keyed by location. Defaults to every location with
+        data in that window; pass `locations` to narrow it."""
         query = (
-            "SELECT me.mdatatime AS taken_at, me.value AS value "
+            "SELECT l.location AS location, me.mdatatime AS taken_at, me.value AS value "
             "FROM metering me "
             "JOIN metric m ON m.metricid = me.metric_metricid "
             "JOIN sensor s ON s.sensorid = me.sensor_sensorid "
             "JOIN location l ON l.locid = s.location_locid "
-            "WHERE l.location = %s AND m.metric = %s "
-            "AND me.mdatatime BETWEEN %s AND %s "
-            "ORDER BY me.mdatatime ASC"
+            "WHERE m.metric = %s AND me.mdatatime BETWEEN %s AND %s"
         )
-        rows = self._query(query, (location, metric, start, end))
-        return [HistoryPoint(taken_at=row["taken_at"], value=row["value"]) for row in rows]
+        args: list = [metric, start, end]
+        if locations:
+            placeholders = ", ".join(["%s"] * len(locations))
+            query += f" AND l.location IN ({placeholders})"
+            args.extend(locations)
+        query += " ORDER BY l.location ASC, me.mdatatime ASC"
+
+        history: dict[str, list[HistoryPoint]] = {}
+        for row in self._query(query, tuple(args)):
+            history.setdefault(row["location"], []).append(
+                HistoryPoint(taken_at=row["taken_at"], value=row["value"])
+            )
+        return history
 
     def _query(self, query: str, args: tuple) -> list[dict]:
         connection = self._connect()
@@ -206,14 +230,15 @@ def demo():
             for metric, reading in metrics.items():
                 print(f"    {metric}: {reading.value} ({reading.taken_at}, {reading.sensor_name})")
 
-        print(f"-- get_stats({location!r}, 'temperature', 24h) --")
-        stats = storage.get_stats(location, "temperature", timedelta(hours=24))
-        print(f"  {stats}")
+        print("-- get_stats('temperature', 24h) (all locations) --")
+        for loc, stats in storage.get_stats("temperature", timedelta(hours=24)).items():
+            print(f"  {loc}: {stats}")
 
-        print(f"-- get_history({location!r}, 'temperature', last 1h) --")
+        print(f"-- get_history('temperature', last 1h, locations=[{location!r}]) --")
         end = datetime.now()
         start = end - timedelta(hours=1)
-        for point in storage.get_history(location, "temperature", start, end):
+        history = storage.get_history("temperature", start, end, locations=[location])
+        for point in history.get(location, []):
             print(f"  {point.taken_at}: {point.value}")
     finally:
         storage.close()
