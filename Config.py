@@ -19,6 +19,9 @@ class Config:
     db_user: str = "weather"
     db_password: str = "Dk94404!"
     db_name: str = "weather"
+    # Read-only credentials for ai_agent.py's MetricStorage - it never writes.
+    db_user_reasonly: str = "weather_read"
+    db_password_readonly: str = "Dk94404!"
 
     # --- Hubitat Maker API ---
     hubitat_ip: str = "192.168.1.214"
@@ -69,6 +72,8 @@ class Config:
             db_user=text("DB_USER", defaults.db_user),
             db_password=text("DB_PASSWORD", defaults.db_password),
             db_name=text("DB_NAME", defaults.db_name),
+            db_user_reasonly=text("DB_USER_READONLY", defaults.db_user_reasonly),
+            db_password_readonly=text("DB_PASSWORD_READONLY", defaults.db_password_readonly),
             hubitat_ip=text("HUBITAT_IP", defaults.hubitat_ip),
             hubitat_app_id=text("HUBITAT_APP_ID", defaults.hubitat_app_id),
             hubitat_token=text("HUBITAT_TOKEN", defaults.hubitat_token),
