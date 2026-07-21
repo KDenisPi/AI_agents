@@ -85,15 +85,15 @@ class MCPClientPersistent:
 
 
 async def demo():
-    async with MCPClientPersistent("http://<pi-ip>:8000/ollama/sse") as client:
+    async with MCPClientPersistent("http://127.0.0.1:8000/weather/sse") as client:
         print("Session ID:", client.session_id)
 
         tools = await client.list_tools()
         print("Tools:", [t.name for t in tools.tools])
 
         # Reuses the same handshake for multiple calls - no re-init cost
-        print(await client.call_tool("list_models", {}))
-        print(await client.call_tool("list_models", {}))
+        for t in tools.tools:
+            print(await client.call_tool(t.name, {}))
 
 
 if __name__ == "__main__":
