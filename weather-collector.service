@@ -1,0 +1,25 @@
+# Install:
+#   sudo cp weather-collector.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now weather-collector
+#   journalctl -u weather-collector -f
+#
+# Adjust User/WorkingDirectory/ExecStart if the checkout lives elsewhere.
+
+[Unit]
+Description=Weather and Hubitat sensor collector
+# The weather source needs the MCP server; it is polled, not required at
+# start, so this is ordering only - the collector survives it being down.
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=denis
+WorkingDirectory=/home/denis/projects/AI_agents
+ExecStart=/usr/bin/python3 /home/denis/projects/AI_agents/Collector.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
