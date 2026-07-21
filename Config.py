@@ -27,6 +27,9 @@ class Config:
 
     # --- Weather station, reached through its MCP server (SSE endpoint) ---
     weather_mcp_url: str = "http://localhost:8000/weather/sse"
+    # The physical weather station's own HTTP API, queried by the MCP server
+    # (McpWeather.py) itself - not to be confused with weather_mcp_url above.
+    weather_station_url: str = "http://192.168.1.7:8080/api/status"
     weather_sensor_id: int = 1000
     weather_sensor_name: str = "WeatherStation"
     weather_location_id: int = 100
@@ -70,6 +73,7 @@ class Config:
             hubitat_app_id=text("HUBITAT_APP_ID", defaults.hubitat_app_id),
             hubitat_token=text("HUBITAT_TOKEN", defaults.hubitat_token),
             weather_mcp_url=text("WEATHER_MCP_URL", defaults.weather_mcp_url),
+            weather_station_url=text("WEATHER_STATION_URL", defaults.weather_station_url),
             weather_sensor_id=number("WEATHER_SENSOR_ID", defaults.weather_sensor_id),
             weather_sensor_name=text("WEATHER_SENSOR_NAME", defaults.weather_sensor_name),
             weather_location_id=number("WEATHER_LOCATION_ID", defaults.weather_location_id),

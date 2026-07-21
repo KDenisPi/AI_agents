@@ -24,6 +24,7 @@ from starlette.applications import Starlette
 from starlette.responses import Response
 from starlette.routing import Mount, Route
 
+from Config import Config
 from McpWeather import McpWeatherServer
 
 def make_mcp_asgi_app(server: Server, base_path: str) -> tuple[Route, Mount]:
@@ -58,7 +59,8 @@ def make_streamable_http_mount(
     )
     return manager, Mount(f"{base_path}/mcp", app=manager.handle_request)
 
-servers = [McpWeatherServer()]
+config = Config.from_env()
+servers = [McpWeatherServer(config)]
 
 # ---- Combine everything into one Starlette app on one port ----
 routes = []
