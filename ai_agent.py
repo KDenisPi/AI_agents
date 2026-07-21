@@ -13,6 +13,9 @@ rest of the agent never writes SQL directly:
     get_history_last_hours(metric, hours, [locations]) -> get_history, last N hours
     get_history_last_days(metric, days, [locations])   -> get_history, last N days
 
+format_current/format_stats/format_history render those results as compact
+text, meant to be dropped straight into an LLM prompt.
+
 pymysql is blocking, same as WeatherDb.py - call these through
 asyncio.to_thread from async code.
 """
@@ -56,6 +59,49 @@ class HistoryPoint:
 
     taken_at: datetime
     value: float
+
+
+def _fmt_dt(taken_at: datetime) -> str:
+    return taken_at.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def format_current(result: dict[str, dict[str, MetricValue]]) -> str:
+    """Render get_current()'s result as compact text for an LLM prompt."""
+    if not result:
+        return "No current data."
+    lines = []
+    for location, metrics in result.items():
+        readings = ", ".join(
+            f"{metric}={value.value:g} ({_fmt_dt(value.taken_at)})"
+            for metric, value in metrics.items()
+        )
+        lines.append(f"{location}: {readings}")
+    return "\n".join(lines)
+
+
+def format_stats(result: dict[str, MetricStats]) -> str:
+    """Render get_stats()'s result as compact text for an LLM prompt."""
+    if not result:
+        return "No stats data."
+    lines = [
+        f"{location}: {stats.metric} min={stats.min:g} max={stats.max:g} "
+        f"avg={stats.avg:.2f} (n={stats.count})"
+        for location, stats in result.items()
+    ]
+    return "\n".join(lines)
+
+
+def format_history(result: dict[str, list[HistoryPoint]]) -> str:
+    """Render get_history()'s result as compact text for an LLM prompt."""
+    if not result:
+        return "No history data."
+    lines = []
+    for location, points in result.items():
+        if not points:
+            continue
+        readings = ", ".join(f"{_fmt_dt(p.taken_at)}={p.value:g}" for p in points)
+        lines.append(f"{location}: {readings}")
+    return "\n".join(lines)
 
 
 class MetricStorage:
@@ -255,19 +301,13 @@ def demo():
     try:
         location = config.weather_location_name
         print("-- get_current() (all locations) --")
-        for loc, metrics in storage.get_current().items():
-            print(f"  {loc}:")
-            for metric, reading in metrics.items():
-                print(f"    {metric}: {reading.value} ({reading.taken_at}, {reading.sensor_name})")
+        print(format_current(storage.get_current()))
 
-        print("-- get_stats_last_hours('temperature', 24) (all locations) --")
-        for loc, stats in storage.get_stats_last_hours("temperature", 24).items():
-            print(f"  {loc}: {stats}")
+        print("\n-- get_stats_last_hours('temperature', 24) (all locations) --")
+        print(format_stats(storage.get_stats_last_hours("temperature", 24)))
 
-        print(f"-- get_history_last_hours('temperature', 1, locations=[{location!r}]) --")
-        history = storage.get_history_last_hours("temperature", 1, locations=[location])
-        for point in history.get(location, []):
-            print(f"  {point.taken_at}: {point.value}")
+        print(f"\n-- get_history_last_hours('temperature', 1, locations=[{location!r}]) --")
+        print(format_history(storage.get_history_last_hours("temperature", 1, locations=[location])))
     finally:
         storage.close()
 
