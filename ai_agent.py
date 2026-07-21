@@ -17,7 +17,8 @@ format_current/format_stats/format_history render those results as compact
 text, meant to be dropped straight into an LLM prompt.
 
 AiAgent ties MetricStorage to two OllamaClient instances (model_small,
-model_large) built from Config's Ollama settings.
+model_large) built from Config's Ollama settings. summarize_current() uses
+model_small to turn get_current() into a plain-language summary.
 
 pymysql is blocking, same as WeatherDb.py - call these through
 asyncio.to_thread from async code.
@@ -317,6 +318,19 @@ class AiAgent:
         self.model_small = OllamaClient(config.ollama_url, config.pllama_model_1)
         self.model_large = OllamaClient(config.ollama_url, config.pllama_model_2)
 
+    def summarize_current(
+        self, locations: list[str] | None = None, metrics: list[str] | None = None
+    ) -> str:
+        """Ask model_small for a plain-language summary of get_current()."""
+        current = self.storage.get_current(locations, metrics)
+        if not current:
+            return "No current data available."
+        prompt = (
+            "Summarize these current sensor readings in a few plain sentences:\n"
+            + format_current(current)
+        )
+        return self.model_small.chat(prompt)
+
     def close(self) -> None:
         self.storage.close()
 
@@ -334,6 +348,12 @@ def demo():
 
         print(f"\n-- get_history_last_hours('temperature', 1, locations=[{location!r}]) --")
         print(format_history(agent.storage.get_history_last_hours("temperature", 1, locations=[location])))
+
+        print("\n-- summarize_current() --")
+        try:
+            print(agent.summarize_current())
+        except Exception as e:
+            print(f"  (model_small unreachable: {e})")
     finally:
         agent.close()
 
