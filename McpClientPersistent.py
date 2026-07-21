@@ -67,7 +67,10 @@ class MCPClientPersistent:
 
     async def call_tool(self, name: str, arguments: dict):
         result = await self._session.call_tool(name, arguments=arguments)
-        return "\n".join(b.text for b in result.content if hasattr(b, "text"))
+        text = "\n".join(b.text for b in result.content if hasattr(b, "text"))
+        if result.isError:
+            raise RuntimeError(f"tool {name} reported an error: {text}")
+        return text
 
     async def close(self):
         await self._stack.aclose()
