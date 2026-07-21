@@ -36,6 +36,10 @@ class Config:
     # --- Scheduling ---
     interval_seconds: int = 600
 
+    # When True, collect from HTTP/MCP as usual but write nothing - the
+    # prepared SQL INSERTs are logged instead. Overridden by --dry-run.
+    dry_run: bool = False
+
     # Fallback for Hubitat devices that are not assigned to any room.
     default_location_id: int = 0
     default_location_name: str = "Unassigned"
@@ -74,6 +78,7 @@ class Config:
                 "WEATHER_LOCATION_OUTSIDE", defaults.weather_location_outside
             ),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
+            dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),
             default_location_name=text("DEFAULT_LOCATION_NAME", defaults.default_location_name),
         )
