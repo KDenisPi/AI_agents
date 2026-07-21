@@ -7,6 +7,8 @@ rest of the agent never writes SQL directly:
 
     get_current([locations], [metrics])       -> latest value per location/metric
     get_stats(metric, period, [locations])    -> min/max/avg/count per location
+    get_stats_last_hours(metric, hours, [locations])   -> get_stats, last N hours
+    get_stats_last_days(metric, days, [locations])     -> get_stats, last N days
     get_history(metric, start, end, [locations]) -> raw readings per location
     get_history_last_hours(metric, hours, [locations]) -> get_history, last N hours
     get_history_last_days(metric, days, [locations])   -> get_history, last N days
@@ -177,6 +179,18 @@ class MetricStorage:
             )
         return stats
 
+    def get_stats_last_hours(
+        self, metric: str, hours: int, locations: list[str] | None = None
+    ) -> dict[str, MetricStats]:
+        """get_stats over the last `hours`, ending now."""
+        return self.get_stats(metric, timedelta(hours=hours), locations)
+
+    def get_stats_last_days(
+        self, metric: str, days: int, locations: list[str] | None = None
+    ) -> dict[str, MetricStats]:
+        """get_stats over the last `days`, ending now."""
+        return self.get_stats(metric, timedelta(days=days), locations)
+
     def get_history(
         self,
         metric: str,
@@ -246,8 +260,8 @@ def demo():
             for metric, reading in metrics.items():
                 print(f"    {metric}: {reading.value} ({reading.taken_at}, {reading.sensor_name})")
 
-        print("-- get_stats('temperature', 24h) (all locations) --")
-        for loc, stats in storage.get_stats("temperature", timedelta(hours=24)).items():
+        print("-- get_stats_last_hours('temperature', 24) (all locations) --")
+        for loc, stats in storage.get_stats_last_hours("temperature", 24).items():
             print(f"  {loc}: {stats}")
 
         print(f"-- get_history_last_hours('temperature', 1, locations=[{location!r}]) --")
