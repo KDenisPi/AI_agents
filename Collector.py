@@ -1,11 +1,14 @@
 """
 Standalone collector: polls every source on a fixed interval and stores
-what they report in MariaDB.
+what they report in MariaDB. The normal run loop also archives metering
+rows from before the current calendar month, once now and then again each
+time the 1st of the month arrives - see Collector.archive_old_data().
 
 Run:
     python Collector.py              # loop forever, one cycle every INTERVAL_SECONDS
-    python Collector.py --once       # single cycle, then exit
-    python Collector.py --dry-run    # collect and log, write nothing
+    python Collector.py --once       # single cycle, then exit (no archiving)
+    python Collector.py --dry-run    # collect and log, write nothing (no archiving)
+    python Collector.py --archive-data    # archive rows before this month, then exit
 
 Configuration comes from the environment or a .env file - see
 collector.env.example. Install as a service with weather-collector.service.
@@ -43,9 +46,16 @@ class Collector:
         self._sources: list[Source] = [HubitatSource(config), WeatherMcpSource(config)]
         self._db = WeatherDb(config)
         self._stopping = asyncio.Event()
+        # None means "never checked yet" - archive_old_data() runs on the
+        # very first tick to catch up on any backlog, then again only once
+        # the 1st of the next month arrives (see _maybe_archive()).
+        self._next_archive_at: datetime | None = None
 
     async def run(self) -> None:
-        """Collect now, then once per interval until stopped."""
+        """Collect now, then once per interval until stopped. Also checks
+        whether metering should be archived on that same cadence - not just
+        once at startup, so a new calendar month gets swept in on its own
+        without restarting the process."""
         logger.info(
             "Collecting from %s every %ss%s",
             ", ".join(s.name for s in self._sources),
@@ -53,8 +63,10 @@ class Collector:
             " (dry run)" if self._dry_run else "",
         )
         await self.collect_once()
+        await self._maybe_archive()
         while not await self._sleep_to_next_tick():
             await self.collect_once()
+            await self._maybe_archive()
         logger.info("Stopped")
 
     async def collect_once(self) -> int:
@@ -124,6 +136,39 @@ class Collector:
         older_than) and delete_after_archive."""
         return await asyncio.to_thread(self._db.archive_metering, **kwargs)
 
+    async def archive_old_data(self) -> dict:
+        """Archive every metering row from before the start of the current
+        calendar month, keeping only the current month's data un-archived."""
+        return await self.archive_metering(older_than=self._start_of_month(datetime.now()))
+
+    async def _maybe_archive(self) -> None:
+        """Run archive_old_data() once now if it has never run, then again
+        only once the 1st of the next month arrives - nothing becomes newly
+        archivable in between, since the cutoff is always "start of this
+        month". Never raises - a failed attempt just means the next check
+        (still the same scheduled date) tries again."""
+        if self._dry_run:
+            return
+        now = datetime.now()
+        if self._next_archive_at is not None and now < self._next_archive_at:
+            return
+
+        try:
+            result = await self.archive_old_data()
+            logger.info("Archived metering before this month: %s", result)
+        except pymysql.MySQLError as e:
+            logger.error("Could not archive metering: %s", e)
+
+        self._next_archive_at = self._first_of_next_month(now)
+
+    @staticmethod
+    def _start_of_month(when: datetime) -> datetime:
+        return datetime(when.year, when.month, 1)
+
+    @staticmethod
+    def _first_of_next_month(when: datetime) -> datetime:
+        return datetime(when.year + (when.month == 12), when.month % 12 + 1, 1)
+
     def stop(self) -> None:
         logger.info("Shutdown requested, finishing current cycle")
         self._stopping.set()
@@ -137,8 +182,8 @@ async def main() -> None:
     parser.add_argument("--once", action="store_true", help="run a single cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="collect but do not write")
     parser.add_argument(
-        "--archive-hours", type=int, metavar="HOURS",
-        help="archive metering rows older than HOURS into metering_history, then exit "
+        "--archive-data", action="store_true",
+        help="archive metering rows older than the first day of the current month, then exit "
              "(does not collect)",
     )
     args = parser.parse_args()
@@ -154,8 +199,8 @@ async def main() -> None:
         loop.add_signal_handler(sig, collector.stop)
 
     try:
-        if args.archive_hours is not None:
-            result = await collector.archive_metering(hours=args.archive_hours)
+        if args.archive_data:
+            result = await collector.archive_old_data()
             logger.info("Archived metering: %s", result)
         elif args.once:
             await collector.collect_once()
