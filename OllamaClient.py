@@ -9,6 +9,7 @@ passing back the same session_id.
 import functools
 import json
 import logging
+import re
 import time
 import uuid
 from pathlib import Path
@@ -18,6 +19,14 @@ import requests
 logger = logging.getLogger("ollama")
 
 DEFAULT_CONTEXT_DIR = Path("ollama_sessions")
+
+
+def _slug(model: str) -> str:
+    """Filename-safe form of a model name - 'llama3.1:8b' -> 'llama3.1_8b'.
+    Model names are caller-supplied and may contain ':' or '/', so this also
+    keeps them from reaching outside the context dir.
+    """
+    return re.sub(r"[^A-Za-z0-9._-]", "_", model)
 
 
 def _format_tokens(metrics: dict | None) -> str:
@@ -76,12 +85,15 @@ def _timed(method):
 class OllamaClient:
     """
     Usage:
-        bot = OllamaClient("http://pi-host:11434", "llama3.2")
+        bot = OllamaClient("http://192.168.1.57:11434", "llama3.1:8b")
         print(bot.chat("How do I check disk usage on my Pi?"))
         print(bot.chat("What about just the SD card partition?"))
 
         # Resume the same conversation later (new process, new instance):
-        bot2 = OllamaClient("http://pi-host:11434", "llama3.2", session_id=bot.session_id)
+        bot2 = OllamaClient("http://192.168.1.57:11434", "llama3.1:8b", session_id=bot.session_id)
+
+    An auto-generated session_id is prefixed with the model, so the file it
+    saves to says which model wrote it - ollama_sessions/llama3.1_8b-<hex>.json.
     """
 
     def __init__(
@@ -98,7 +110,10 @@ class OllamaClient:
         self._model = model
         self.options = options or {}
         self.timeout = timeout
-        self.session_id = session_id or uuid.uuid4().hex
+        # The model goes in the id, not just the filename, so session_id stays
+        # the one key to the file - ids issued before this still resolve, and
+        # resuming under a different model still finds the conversation.
+        self.session_id = session_id or f"{_slug(model)}-{uuid.uuid4().hex}"
 
         self._context_dir = Path(context_dir)
         self._context_dir.mkdir(parents=True, exist_ok=True)
