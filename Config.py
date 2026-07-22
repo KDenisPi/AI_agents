@@ -19,16 +19,17 @@ class Config:
     db_host: str = "192.168.1.11"
     db_port: int = 3306
     db_user: str = "weather"
-    db_password: str = "Dk94404!"
+    # No secret defaults in source - real values live in .env (gitignored).
+    db_password: str = ""
     db_name: str = "weather"
     # Read-only credentials for ai_agent.py's MetricStorage - it never writes.
     db_user_readonly: str = "weather_read"
-    db_password_readonly: str = "DkRead94404!"
+    db_password_readonly: str = ""
 
     # --- Hubitat Maker API ---
     hubitat_ip: str = "192.168.1.214"
     hubitat_app_id: str = "7"
-    hubitat_token: str = "3b72adce-e0b3-43ae-8d1e-549bf82355d5"
+    hubitat_token: str = ""
 
     # --- Weather station, reached through its MCP server (SSE endpoint) ---
     weather_mcp_url: str = "http://192.168.1.57:8000/weather/sse"
