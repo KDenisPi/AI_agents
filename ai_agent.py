@@ -64,17 +64,24 @@ def demo():
         print("-- get_current() (all locations) --")
         print(format_current(agent.storage.get_current()))
 
-        print("\n-- get_stats_last_hours('temperature', 24) (all locations) --")
-        print(format_stats(agent.storage.get_stats_last_hours("temperature", 24)))
+        #print("\n-- get_stats_last_hours('temperature', 24) (all locations) --")
+        #print(format_stats(agent.storage.get_stats_last_hours("temperature", 24)))
 
-        print(f"\n-- get_history_last_hours('temperature', 1, locations=[{location!r}]) --")
-        print(format_history(agent.storage.get_history_last_hours("temperature", 1, locations=[location])))
+        #print(f"\n-- get_history_last_hours('temperature', 1, locations=[{location!r}]) --")
+        #print(format_history(agent.storage.get_history_last_hours("temperature", 1, locations=[location])))
 
         print("\n-- summarize_current() --")
         try:
             print(agent.summarize_current())
         except Exception as e:
             print(f"  (model_small unreachable: {e})")
+
+        print("\n-- summarize_current_battery() --")
+        try:
+            print(agent.summarize_current_battery())
+        except Exception as e:
+            print(f"  (model_small unreachable: {e})")
+
     finally:
         agent.close()
 
