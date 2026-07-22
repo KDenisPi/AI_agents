@@ -37,7 +37,7 @@ class OllamaClient:
         timeout: float = 60,
     ):
         self.url = url.rstrip("/")
-        self.model = model
+        self._model = model
         self.options = options or {}
         self.timeout = timeout
         self.session_id = session_id or uuid.uuid4().hex
@@ -49,6 +49,11 @@ class OllamaClient:
         self._messages: list[dict] = self._load()
         if not self._messages and system:
             self._messages.append({"role": "system", "content": system})
+
+    @property
+    def model(self) -> str:
+        """Read-only - the model is fixed for the life of the client."""
+        return self._model
 
     @property
     def context(self) -> list[dict]:
