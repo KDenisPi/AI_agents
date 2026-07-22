@@ -31,7 +31,7 @@ class Config:
     hubitat_token: str = "3b72adce-e0b3-43ae-8d1e-549bf82355d5"
 
     # --- Weather station, reached through its MCP server (SSE endpoint) ---
-    weather_mcp_url: str = "http://localhost:8000/weather/sse"
+    weather_mcp_url: str = "http://192.168.1.57:8000/weather/sse"
     # The physical weather station's own HTTP API, queried by the MCP server
     # (McpWeather.py) itself - not to be confused with weather_mcp_url above.
     weather_station_url: str = "http://192.168.1.7:8080/api/status"
@@ -42,9 +42,9 @@ class Config:
     weather_location_outside: bool = False
 
     # --- Ollama ---
-    ollama_url: str = "http://pi-host:11434"
-    pllama_model_1: str = "llama3.2"
-    pllama_model_2: str = "llama3.2"
+    ollama_url: str = "http://192.168.1.57:11434"
+    pllama_model_1: str = "llama3.1"
+    pllama_model_2: str = "qwen3.6"
     pllama_model_3: str = "llama3.2"
 
     # --- Scheduling ---
