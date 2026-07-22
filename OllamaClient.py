@@ -29,6 +29,16 @@ def _slug(model: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", model)
 
 
+def session_id_for(model: str, name: str) -> str:
+    """A session id naming both the conversation and the model running it -
+    session_id_for("llama3.1:8b", "kitchen") -> "llama3.1_8b-kitchen".
+    For callers driving several models through one logical session: each
+    needs an id of its own, or they share a history file and overwrite
+    each other.
+    """
+    return f"{_slug(model)}-{name}"
+
+
 def _format_tokens(metrics: dict | None) -> str:
     """Token counts and generation rate from an Ollama response, as a log
     suffix. Empty string if the server did not report them.
@@ -113,7 +123,7 @@ class OllamaClient:
         # The model goes in the id, not just the filename, so session_id stays
         # the one key to the file - ids issued before this still resolve, and
         # resuming under a different model still finds the conversation.
-        self.session_id = session_id or f"{_slug(model)}-{uuid.uuid4().hex}"
+        self._session_id = session_id or session_id_for(model, uuid.uuid4().hex)
 
         self._context_dir = Path(context_dir)
         self._context_dir.mkdir(parents=True, exist_ok=True)
@@ -128,6 +138,15 @@ class OllamaClient:
     def model(self) -> str:
         """Read-only - the model is fixed for the life of the client."""
         return self._model
+
+    @property
+    def session_id(self) -> str:
+        """Read-only - the context file is resolved from it once, at
+        construction, so reassigning it would only change the label while
+        the client kept writing the original file. Point a new client at
+        the conversation instead: OllamaClient(url, model, session_id=...).
+        """
+        return self._session_id
 
     @property
     def context(self) -> list[dict]:

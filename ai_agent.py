@@ -5,10 +5,13 @@ models built from Config's Ollama settings.
 AiAgent exposes model_small (cheap/frequent calls) and model_large
 (anything needing more reasoning), plus summarize_current(), which uses
 model_small to turn get_current() into a plain-language summary.
+
+Each run starts a new conversation unless AiAgent is given a session_id,
+which resumes the one saved under that name.
 """
 
 from Config import Config
-from OllamaClient import OllamaClient
+from OllamaClient import OllamaClient, session_id_for
 from ai_agent_storage import MetricStorage, format_current, format_history, format_stats
 
 
@@ -23,15 +26,40 @@ class AiAgent:
         agent.storage.get_current(["Weather station"])
         agent.model_small.chat("...")
         agent.close()
+
+        # Same conversation across runs - both models pick up where they
+        # left off, instead of starting fresh each process:
+        agent = AiAgent(config, session_id="kitchen")
     """
     prompt_template_summarize_current = "Summarize these current sensor readings in a few plain sentences:\n"
     prompt_template_battery_status = "Summarize the battery status of these devices in a few plain sentences:\n"
     promp_no_data = "No current data available."
 
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, session_id: str | None = None):
+        """`session_id` resumes a named conversation, surviving process
+        restarts. Default (None) is a fresh session per process - note that
+        resuming re-sends every earlier exchange, so readings from previous
+        runs stay in the prompt and it grows with each one. Call
+        model_small.reset() when the history stops being worth carrying.
+        """
         self.storage = MetricStorage(config)
-        self.model_small = OllamaClient(config.ollama_url, config.ollama_model_1)
-        self.model_large = OllamaClient(config.ollama_url, config.ollama_model_2)
+        # One id per model, not one per agent: both clients would otherwise
+        # write the same history file. The role suffix keeps them apart even
+        # when ollama_model_1 and ollama_model_2 name the same model.
+        self.model_small = OllamaClient(
+            config.ollama_url,
+            config.ollama_model_1,
+            session_id=session_id_for(config.ollama_model_1, f"{session_id}-small")
+            if session_id
+            else None,
+        )
+        self.model_large = OllamaClient(
+            config.ollama_url,
+            config.ollama_model_2,
+            session_id=session_id_for(config.ollama_model_2, f"{session_id}-large")
+            if session_id
+            else None,
+        )
 
     def summarize_current(
         self, locations: list[str] | None = None, metrics: list[str] | None = None
