@@ -146,5 +146,51 @@ def demo():
         agent.close()
 
 
+def demo_pruning():
+    """Exercise OllamaClient's sliding-window pruning end to end through a
+    real AiAgent. Lowers model_large's budget well below Config's default
+    (which would take dozens of exchanges to fill) so a handful of chat()
+    turns is enough to force at least one prune, then checks that older
+    turns actually got folded into a summary instead of just growing
+    forever."""
+    config = Config.from_env()
+    agent = AiAgent(config)
+    bot = agent.model_large
+    bot.max_history_tokens = 100
+    bot.keep_recent_messages = 4
+
+    # Long enough on their own (~19 est. tokens/prompt, cumulative ~109 by
+    # the last one) that the budget gets crossed from the prompts alone -
+    # no need to depend on how verbose the model's replies turn out to be.
+    prompts = [
+        "My favorite color is teal, and I really love long walks on rainy afternoons.",
+        "I have a dog named Biscuit, a very energetic three-year-old golden retriever.",
+        "I live in Seattle, in a small apartment near the water with a nice view.",
+        "I work as a software engineer and enjoy hiking on weekends when I can.",
+        "What's a good weekend activity near where I live, given my dog and the weather?",
+        "Remind me what my dog's name is, my favorite color, and where I live.",
+    ]
+    try:
+        for prompt in prompts:
+            reply = bot.chat(prompt)
+            print(f"> {prompt}\n{reply}")
+            print(f"  [history={len(bot.context)} msg(s), summary={'yes' if bot.summary else 'no'}]\n")
+
+        print("Final summary:", bot.summary)
+        assert bot.summary is not None, "expected the low budget to force at least one pruning round"
+        print(
+            "pruning check: OK - older turns were folded into a summary "
+            f"instead of growing the verbatim history past {len(prompts) * 2} message(s)"
+        )
+    except AssertionError:
+        raise
+    except Exception as e:
+        print(f"  (model unreachable: {e})")
+    finally:
+        agent.close()
+
+
 if __name__ == "__main__":
     demo()
+    print("\n" + "=" * 60)
+    demo_pruning()
