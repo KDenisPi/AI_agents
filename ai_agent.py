@@ -53,6 +53,8 @@ class AiAgent:
             session_id=session_id_for(config.ollama_model_1, f"{session_id}-small")
             if session_id
             else None,
+            max_history_tokens=config.ollama_max_history_tokens,
+            keep_recent_messages=config.ollama_keep_recent_messages,
         )
         self.model_large = OllamaClient(
             config.ollama_url,
@@ -60,6 +62,8 @@ class AiAgent:
             session_id=session_id_for(config.ollama_model_2, f"{session_id}-large")
             if session_id
             else None,
+            max_history_tokens=config.ollama_max_history_tokens,
+            keep_recent_messages=config.ollama_keep_recent_messages,
         )
 
     def summarize_current(

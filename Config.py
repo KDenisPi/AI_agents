@@ -48,6 +48,13 @@ class Config:
     ollama_model_1: str = "llama3.1:8b"
     ollama_model_2: str = "qwen3.6"
     ollama_model_3: str = "gpt-oss:20b"
+    # Rough token budget (~4 chars/token) for the verbatim history
+    # OllamaClient.chat() sends before folding older turns into a summary,
+    # and how many of the most recent messages stay verbatim once it does.
+    # Mirrors OllamaClient's own DEFAULT_MAX_HISTORY_TOKENS/
+    # DEFAULT_KEEP_RECENT_MESSAGES - tune to the model's actual num_ctx.
+    ollama_max_history_tokens: int = 3000
+    ollama_keep_recent_messages: int = 10
 
     # --- Scheduling ---
     interval_seconds: int = 600
@@ -135,6 +142,12 @@ class Config:
             ollama_model_1=text("OLLAMA_MODEL_1", defaults.ollama_model_1),
             ollama_model_2=text("OLLAMA_MODEL_2", defaults.ollama_model_2),
             ollama_model_3=text("OLLAMA_MODEL_3", defaults.ollama_model_3),
+            ollama_max_history_tokens=number(
+                "OLLAMA_MAX_HISTORY_TOKENS", defaults.ollama_max_history_tokens
+            ),
+            ollama_keep_recent_messages=number(
+                "OLLAMA_KEEP_RECENT_MESSAGES", defaults.ollama_keep_recent_messages
+            ),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
             dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),
