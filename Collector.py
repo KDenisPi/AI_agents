@@ -27,10 +27,6 @@ from Source import Source
 from WeatherDb import WeatherDb
 from WeatherMcpSource import WeatherMcpSource
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-)
 logger = logging.getLogger("collector")
 
 
@@ -137,6 +133,9 @@ async def main() -> None:
     args = parser.parse_args()
 
     config = Config.from_env()
+    if config.log_file == Config.log_file:  # LOG_FILE not overridden via env
+        config.log_file = "logs/collector.log"
+    config.configure_logging()
     collector = Collector(config, dry_run=args.dry_run or config.dry_run)
 
     loop = asyncio.get_running_loop()

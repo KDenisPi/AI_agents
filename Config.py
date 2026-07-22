@@ -4,8 +4,10 @@ a .env file next to this module). See collector.env.example for the full
 list of variables and their defaults.
 """
 
+import logging
 import os
 from dataclasses import dataclass
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -29,7 +31,7 @@ class Config:
     hubitat_token: str = "3b72adce-e0b3-43ae-8d1e-549bf82355d5"
 
     # --- Weather station, reached through its MCP server (SSE endpoint) ---
-    weather_mcp_url: str = "http://localhost:8000/weather/sse"
+    weather_mcp_url: str = "http://192.168.1.57:8000/weather/sse"
     # The physical weather station's own HTTP API, queried by the MCP server
     # (McpWeather.py) itself - not to be confused with weather_mcp_url above.
     weather_station_url: str = "http://192.168.1.7:8080/api/status"
@@ -40,9 +42,9 @@ class Config:
     weather_location_outside: bool = False
 
     # --- Ollama ---
-    ollama_url: str = "http://pi-host:11434"
-    pllama_model_1: str = "llama3.2"
-    pllama_model_2: str = "llama3.2"
+    ollama_url: str = "http://192.168.1.57:11434"
+    pllama_model_1: str = "llama3.1"
+    pllama_model_2: str = "qwen3.6"
     pllama_model_3: str = "llama3.2"
 
     # --- Scheduling ---
@@ -55,6 +57,41 @@ class Config:
     # Fallback for Hubitat devices that are not assigned to any room.
     default_location_id: int = 0
     default_location_name: str = "Unassigned"
+
+    # --- Logging ---
+    # One of DEBUG, INFO, WARNING, ERROR, CRITICAL.
+    log_level: str = "INFO"
+    # Rotated every 24h from process start. Empty disables file logging -
+    # console output only.
+    log_file: str = "logs/app.log"
+    # Rotated log files to keep before the oldest is deleted. 0 keeps all.
+    log_backup_count: int = 7
+
+    def configure_logging(self) -> None:
+        """Set up the root logger from log_level/log_file. Call this once,
+        from each entry point, right after Config.from_env() - library
+        modules should only do logging.getLogger(__name__), never
+        logging.basicConfig().
+        """
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+        if self.log_file:
+            log_path = Path(self.log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(
+                TimedRotatingFileHandler(
+                    log_path,
+                    when="D",
+                    interval=1,
+                    backupCount=self.log_backup_count,
+                )
+            )
+
+        for handler in handlers:
+            handler.setFormatter(formatter)
+
+        logging.basicConfig(level=self.log_level.upper(), handlers=handlers)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -100,4 +137,7 @@ class Config:
             dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),
             default_location_name=text("DEFAULT_LOCATION_NAME", defaults.default_location_name),
+            log_level=text("LOG_LEVEL", defaults.log_level),
+            log_file=text("LOG_FILE", defaults.log_file),
+            log_backup_count=number("LOG_BACKUP_COUNT", defaults.log_backup_count),
         )

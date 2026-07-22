@@ -32,7 +32,6 @@ import pymysql
 
 from Config import Config
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ai-agent")
 
 

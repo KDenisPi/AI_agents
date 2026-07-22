@@ -15,7 +15,6 @@ import pymysql
 from Config import Config
 from Reading import Reading
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("weather-db")
 
 # Column widths from db/weather.sql - names are truncated rather than

@@ -58,6 +58,9 @@ class AiAgent:
 
 def demo():
     config = Config.from_env()
+    if config.log_file == Config.log_file:  # LOG_FILE not overridden via env
+        config.log_file = "logs/ai_agent.log"
+    config.configure_logging()
     agent = AiAgent(config)
     try:
         location = config.weather_location_name

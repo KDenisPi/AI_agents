@@ -15,7 +15,6 @@ from HubitatClient import HubitatClient
 from Reading import Reading
 from Source import Source, to_float
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hubitat-source")
 
 # Hubitat attribute name -> canonical metric name. Attributes not listed

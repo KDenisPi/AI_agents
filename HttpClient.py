@@ -4,7 +4,6 @@ import aiohttp
 import logging
 from typing import Any
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("my-http")
 
 class MyHttpClient:

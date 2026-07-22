@@ -9,7 +9,6 @@ from mcp.types import Tool, TextContent
 from Config import Config
 from HttpClient import MyHttpClient
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mcp-weather")
 
 class McpWeatherServer:

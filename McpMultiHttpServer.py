@@ -60,6 +60,9 @@ def make_streamable_http_mount(
     return manager, Mount(f"{base_path}/mcp", app=manager.handle_request)
 
 config = Config.from_env()
+if config.log_file == Config.log_file:  # LOG_FILE not overridden via env
+    config.log_file = "logs/mcp_server.log"
+config.configure_logging()
 servers = [McpWeatherServer(config)]
 
 # ---- Combine everything into one Starlette app on one port ----
