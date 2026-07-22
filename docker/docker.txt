@@ -1,0 +1,4 @@
+docker buildx build --tag python3.11:tf_agents -f ./Dockerfile .
+
+docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name mcp-server -p 8000:8000 ai-agent:latest python -u McpMultiHttpServer.py
+docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name data-collector ai-agent:latest python -u Collector.py
