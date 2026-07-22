@@ -33,6 +33,7 @@ class AiAgent:
     """
     prompt_template_summarize_current = "Summarize these current sensor readings in a few plain sentences:\n"
     prompt_template_battery_status = "Summarize the battery status of these devices in a few plain sentences:\n"
+    prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
     promp_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
@@ -79,10 +80,14 @@ class AiAgent:
         prompt = (self.prompt_template_battery_status + format_current(current))
         return self.model_small.chat_once(prompt)
 
+    def transalate_eng_ru(self, message: str) -> str:
+        """Ask model_large for message translation from Eng to Russian."""
+        prompt = (self.prompt_template_translate_en_ru + message)
+        #We will keep history of translations, so we use chat() instead of chat_once()
+        return self.model_large.chat(prompt)
 
     def close(self) -> None:
         self.storage.close()
-
 
 def demo():
     config = Config.from_env()
@@ -109,13 +114,27 @@ def demo():
 
         print("\n-- summarize_current() --")
         try:
-            print(agent.summarize_current(metrics=['temperature', 'humidity']))
+            msg = agent.summarize_current(metrics=['temperature', 'humidity'])
+            print(msg)
+            print("\n-- translate_eng_ru() --")
+            try:
+                msg_ru = agent.transalate_eng_ru(msg)
+                print(msg_ru)
+            except Exception as e:
+                print(f"  (model_large unreachable: {e})")
         except Exception as e:
             print(f"  (model_small unreachable: {e})")
 
         print("\n-- summarize_current_battery() --")
         try:
-            print(agent.summarize_current_battery())
+            msg = agent.summarize_current_battery()
+            print(msg)
+            print("\n-- translate_eng_ru() --")
+            try:
+                msg_ru = agent.transalate_eng_ru(msg)
+                print(msg_ru)
+            except Exception as e:
+                print(f"  (model_large unreachable: {e})")
         except Exception as e:
             print(f"  (model_small unreachable: {e})")
 
