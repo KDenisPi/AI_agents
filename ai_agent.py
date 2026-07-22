@@ -69,7 +69,7 @@ class AiAgent:
         if not current:
             return self.promp_no_data
         prompt = (self.prompt_template_summarize_current + format_current(current))
-        return self.model_small.chat(prompt)
+        return self.model_small.chat_once(prompt)
 
     def summarize_current_battery(self) -> str:
         """Ask model_small for a plain-language summary of get_current()."""
@@ -77,7 +77,7 @@ class AiAgent:
         if not current:
             return self.promp_no_data
         prompt = (self.prompt_template_battery_status + format_current(current))
-        return self.model_small.chat(prompt)
+        return self.model_small.chat_once(prompt)
 
 
     def close(self) -> None:

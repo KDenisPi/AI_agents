@@ -129,10 +129,11 @@ class OllamaClient:
         self._context_dir.mkdir(parents=True, exist_ok=True)
         self._context_file = self._context_dir / f"{self.session_id}.json"
 
+        # Not persisted with the rest of the history - re-sent fresh on every
+        # request, so changing it doesn't mean rewriting old session files.
+        self._system = system
         self._last_metrics: dict | None = None
         self._messages: list[dict] = self._load()
-        if not self._messages and system:
-            self._messages.append({"role": "system", "content": system})
 
     @property
     def model(self) -> str:
@@ -155,13 +156,40 @@ class OllamaClient:
 
     @_timed
     def chat(self, prompt: str) -> str:
+        """Send `prompt` plus the full saved history (system prompt first),
+        and append both sides of the exchange to that history."""
         self._messages.append({"role": "user", "content": prompt})
+        reply = self._request(self._messages)
+        self._messages.append({"role": "assistant", "content": reply})
+        self._save()
+        return reply
+
+    @_timed
+    def chat_once(self, prompt: str) -> str:
+        """Send `prompt` with the system prompt only - no saved history sent,
+        and nothing about this call is appended to it or persisted. For
+        calls that don't need prior turns, e.g. summarizing freshly queried
+        data - use chat() for anything that should feel like a conversation.
+        """
+        return self._request([{"role": "user", "content": prompt}])
+
+    def reset(self):
+        """Drop conversation history. The system prompt isn't part of it -
+        it's re-sent fresh from self._system on every call - so there's
+        nothing of it to keep."""
+        self._messages = []
+        self._save()
+
+    def _request(self, messages: list[dict]) -> str:
+        request_messages = messages
+        if self._system:
+            request_messages = [{"role": "system", "content": self._system}] + messages
 
         response = requests.post(
             f"{self.url}/api/chat",
             json={
                 "model": self.model,
-                "messages": self._messages,
+                "messages": request_messages,
                 "stream": False,
                 "options": self.options,
             },
@@ -171,20 +199,18 @@ class OllamaClient:
 
         payload = response.json()
         self._last_metrics = payload  # picked up by @_timed for the log line
-        reply = payload["message"]["content"]
-        self._messages.append({"role": "assistant", "content": reply})
-        self._save()
-        return reply
-
-    def reset(self):
-        """Drop conversation history, keeping the system prompt if one was set."""
-        self._messages = [m for m in self._messages if m["role"] == "system"]
-        self._save()
+        return payload["message"]["content"]
 
     def _load(self) -> list[dict]:
-        if self._context_file.exists():
-            return json.loads(self._context_file.read_text())
-        return []
+        if not self._context_file.exists():
+            return []
+        # Older session files may have a persisted system message from
+        # before it moved to self._system - drop it so it isn't resent as
+        # a stray turn and duplicated alongside the fresh one.
+        return [
+            m for m in json.loads(self._context_file.read_text())
+            if m.get("role") != "system"
+        ]
 
     def _save(self):
         self._context_file.write_text(json.dumps(self._messages, indent=2))
