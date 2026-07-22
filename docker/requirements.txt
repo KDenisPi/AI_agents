@@ -11,3 +11,4 @@ sounddevice
 vosk
 aiohttp
 pymysql
+python-dateutil

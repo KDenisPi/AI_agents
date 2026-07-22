@@ -5,12 +5,22 @@ Every write is idempotent: locations and sensors are auto-registered the
 first time they appear, and metering rows lean on the metering_uq unique
 index so re-running a cycle can never duplicate a measurement.
 
-pymysql is blocking, so the collector calls save() through asyncio.to_thread.
+archive_metering() aggregates old raw metering rows into hourly averages in
+metering_history and (by default) deletes the raw rows, to keep `metering`
+from growing unbounded. Uses the same write-capable connection as save() -
+unlike ai_agent_storage.MetricStorage, WeatherDb already connects with
+config.db_user, which has the INSERT/DELETE this needs.
+
+pymysql is blocking, so the collector calls save()/archive_metering()
+through asyncio.to_thread.
 """
 
 import logging
+from datetime import datetime, timedelta
+from typing import Optional
 
 import pymysql
+from dateutil.relativedelta import relativedelta
 
 from Config import Config
 from Reading import Reading
@@ -74,6 +84,33 @@ def _render(query: str, args: tuple) -> str:
     for arg in args:
         rendered = rendered.replace("%s", _sql_literal(arg), 1)
     return rendered
+
+
+def _resolve_cutoff(
+    hours: Optional[int] = None,
+    months: Optional[int] = None,
+    older_than: Optional[datetime] = None,
+) -> datetime:
+    """
+    Resolve exactly one retention spec into an absolute cutoff datetime.
+    Rows with mdatatime < cutoff are considered archivable.
+
+    Exactly one of `hours`, `months`, or `older_than` must be given.
+    `months` uses calendar-aware subtraction (e.g. Mar 31 - 1 month = Feb 28),
+    unlike a fixed timedelta which can't represent variable month lengths.
+    """
+    specs_given = [v is not None for v in (hours, months, older_than)]
+    if sum(specs_given) != 1:
+        raise ValueError(
+            "Specify exactly one of: hours, months, or older_than "
+            f"(got hours={hours!r}, months={months!r}, older_than={older_than!r})"
+        )
+
+    if older_than is not None:
+        return older_than
+    if months is not None:
+        return datetime.now() - relativedelta(months=months)
+    return datetime.now() - timedelta(hours=hours)
 
 
 class WeatherDb:
@@ -178,6 +215,76 @@ class WeatherDb:
         for reading in readings:
             statements.append(_render(METERING_INSERT, _metering_args(reading)))
         return statements
+
+    def archive_metering(
+        self,
+        hours: Optional[int] = None,
+        months: Optional[int] = None,
+        older_than: Optional[datetime] = None,
+        delete_after_archive: bool = True,
+    ) -> dict:
+        """
+        Aggregate raw metering rows older than a cutoff into hourly averages
+        in metering_history, then optionally delete the archived raw rows.
+
+        Specify exactly one retention spec:
+            hours       -- e.g. hours=24 archives rows older than 24 hours
+            months      -- e.g. months=1 archives rows older than 1 calendar month
+            older_than  -- an explicit datetime cutoff, e.g. datetime(2026, 1, 1)
+
+        Runs over the same write-capable connection as save().
+
+        Args:
+            delete_after_archive: if False, rows are archived but not deleted
+                from `metering` - useful for a dry run or a grace period.
+
+        Returns:
+            dict with counts: {"buckets_written": int, "rows_deleted": int, "cutoff": datetime}
+        """
+        cutoff = _resolve_cutoff(hours=hours, months=months, older_than=older_than)
+        result = {"buckets_written": 0, "rows_deleted": 0, "cutoff": cutoff}
+
+        connection = self._connect()
+        try:
+            with connection.cursor() as cursor:
+                # 1. Aggregate raw readings older than cutoff into hourly
+                #    buckets and upsert into metering_history.
+                aggregate_sql = """
+                    INSERT INTO metering_history
+                        (mdatatime, value, sample_count, sensor_sensorid, metric_metricid)
+                    SELECT
+                        DATE_FORMAT(mdatatime, '%%Y-%%m-%%d %%H:00:00') AS hour_bucket,
+                        AVG(value)      AS avg_value,
+                        COUNT(*)        AS sample_count,
+                        sensor_sensorid,
+                        metric_metricid
+                    FROM metering
+                    WHERE mdatatime < %s
+                    GROUP BY hour_bucket, sensor_sensorid, metric_metricid
+                    ON DUPLICATE KEY UPDATE
+                        value = VALUES(value),
+                        sample_count = VALUES(sample_count)
+                """
+                cursor.execute(aggregate_sql, (cutoff,))
+                result["buckets_written"] = cursor.rowcount
+                logger.info(
+                    "Archived readings older than %s into %d hourly bucket row(s)",
+                    cutoff.isoformat(), result["buckets_written"],
+                )
+
+                # 2. Delete the raw rows that were just archived.
+                if delete_after_archive:
+                    cursor.execute("DELETE FROM metering WHERE mdatatime < %s", (cutoff,))
+                    result["rows_deleted"] = cursor.rowcount
+                    logger.info("Deleted %d archived raw row(s) from metering", result["rows_deleted"])
+
+            connection.commit()
+        except pymysql.MySQLError:
+            connection.rollback()
+            logger.exception("Archiving failed; transaction rolled back")
+            raise
+
+        return result
 
     def close(self) -> None:
         if self._connection is not None:

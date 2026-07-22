@@ -87,6 +87,34 @@ CREATE TABLE IF NOT EXISTS `weather`.`metering` (
 ENGINE = InnoDB
 COMMENT = 'Keep metering values from sensors';
 
+
+-- -----------------------------------------------------
+-- Table `weather`.`metering_history`
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS `weather`.`metering_history` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `mdatatime` DATETIME NOT NULL COMMENT 'Start of the hourly bucket this row summarizes',
+  `value` FLOAT NOT NULL COMMENT 'Average of the raw values archived into this bucket',
+  `sample_count` INT NOT NULL COMMENT 'Number of raw metering rows averaged into this bucket',
+  `sensor_sensorid` INT NOT NULL,
+  `metric_metricid` INT NOT NULL,
+  PRIMARY KEY (`id`),
+  INDEX `fk_metering_history_sensor1_idx` (`sensor_sensorid` ASC) VISIBLE,
+  INDEX `fk_metering_history_metric1_idx` (`metric_metricid` ASC) VISIBLE,
+  UNIQUE INDEX `metering_history_uq` (`metric_metricid` ASC, `sensor_sensorid` ASC, `mdatatime` ASC) VISIBLE,
+  CONSTRAINT `fk_metering_history_sensor1`
+    FOREIGN KEY (`sensor_sensorid`)
+    REFERENCES `weather`.`sensor` (`sensorid`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION,
+  CONSTRAINT `fk_metering_history_metric1`
+    FOREIGN KEY (`metric_metricid`)
+    REFERENCES `weather`.`metric` (`metricid`)
+    ON DELETE NO ACTION
+    ON UPDATE NO ACTION)
+ENGINE = InnoDB
+COMMENT = 'Hourly-averaged archive of metering rows past the retention cutoff - see WeatherDb.archive_metering()';
+
 -- User creation and passwords live in db/weather_users.sql (gitignored) -
 -- copy db/weather_users.sql.example, fill in real passwords matching your
 -- .env's DB_PASSWORD/DB_PASSWORD_READONLY, and run it after this script:

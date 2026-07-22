@@ -118,6 +118,12 @@ class Collector:
         except asyncio.TimeoutError:
             return False
 
+    async def archive_metering(self, **kwargs) -> dict:
+        """Archive old raw metering rows via WeatherDb.archive_metering() -
+        see its docstring for the retention-spec kwargs (hours/months/
+        older_than) and delete_after_archive."""
+        return await asyncio.to_thread(self._db.archive_metering, **kwargs)
+
     def stop(self) -> None:
         logger.info("Shutdown requested, finishing current cycle")
         self._stopping.set()
@@ -130,6 +136,11 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Collect sensor data into MariaDB")
     parser.add_argument("--once", action="store_true", help="run a single cycle and exit")
     parser.add_argument("--dry-run", action="store_true", help="collect but do not write")
+    parser.add_argument(
+        "--archive-hours", type=int, metavar="HOURS",
+        help="archive metering rows older than HOURS into metering_history, then exit "
+             "(does not collect)",
+    )
     args = parser.parse_args()
 
     config = Config.from_env()
@@ -143,7 +154,10 @@ async def main() -> None:
         loop.add_signal_handler(sig, collector.stop)
 
     try:
-        if args.once:
+        if args.archive_hours is not None:
+            result = await collector.archive_metering(hours=args.archive_hours)
+            logger.info("Archived metering: %s", result)
+        elif args.once:
             await collector.collect_once()
         else:
             await collector.run()
