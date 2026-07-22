@@ -30,8 +30,8 @@ class AiAgent:
 
     def __init__(self, config: Config):
         self.storage = MetricStorage(config)
-        self.model_small = OllamaClient(config.ollama_url, config.pllama_model_1)
-        self.model_large = OllamaClient(config.ollama_url, config.pllama_model_2)
+        self.model_small = OllamaClient(config.ollama_url, config.ollama_model_1)
+        self.model_large = OllamaClient(config.ollama_url, config.ollama_model_2)
 
     def summarize_current(
         self, locations: list[str] | None = None, metrics: list[str] | None = None

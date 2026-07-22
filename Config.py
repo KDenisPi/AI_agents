@@ -22,8 +22,8 @@ class Config:
     db_password: str = "Dk94404!"
     db_name: str = "weather"
     # Read-only credentials for ai_agent.py's MetricStorage - it never writes.
-    db_user_reasonly: str = "weather_read"
-    db_password_readonly: str = "Dk94404!"
+    db_user_readonly: str = "weather_read"
+    db_password_readonly: str = "DkRead94404!"
 
     # --- Hubitat Maker API ---
     hubitat_ip: str = "192.168.1.214"
@@ -43,9 +43,11 @@ class Config:
 
     # --- Ollama ---
     ollama_url: str = "http://192.168.1.57:11434"
-    pllama_model_1: str = "llama3.1"
-    pllama_model_2: str = "qwen3.6"
-    pllama_model_3: str = "llama3.2"
+    # Keep the tag - a bare name resolves to <name>:latest, which the server
+    # does not have for llama3.1.
+    ollama_model_1: str = "llama3.1:8b"
+    ollama_model_2: str = "qwen3.6"
+    ollama_model_3: str = "gpt-oss:20b"
 
     # --- Scheduling ---
     interval_seconds: int = 600
@@ -115,7 +117,7 @@ class Config:
             db_user=text("DB_USER", defaults.db_user),
             db_password=text("DB_PASSWORD", defaults.db_password),
             db_name=text("DB_NAME", defaults.db_name),
-            db_user_reasonly=text("DB_USER_READONLY", defaults.db_user_reasonly),
+            db_user_readonly=text("DB_USER_READONLY", defaults.db_user_readonly),
             db_password_readonly=text("DB_PASSWORD_READONLY", defaults.db_password_readonly),
             hubitat_ip=text("HUBITAT_IP", defaults.hubitat_ip),
             hubitat_app_id=text("HUBITAT_APP_ID", defaults.hubitat_app_id),
@@ -130,9 +132,9 @@ class Config:
                 "WEATHER_LOCATION_OUTSIDE", defaults.weather_location_outside
             ),
             ollama_url=text("OLLAMA_URL", defaults.ollama_url),
-            pllama_model_1=text("OLLAMA_MODEL_1", defaults.pllama_model_1),
-            pllama_model_2=text("OLLAMA_MODEL_2", defaults.pllama_model_2),
-            pllama_model_3=text("OLLAMA_MODEL_3", defaults.pllama_model_3),
+            ollama_model_1=text("OLLAMA_MODEL_1", defaults.ollama_model_1),
+            ollama_model_2=text("OLLAMA_MODEL_2", defaults.ollama_model_2),
+            ollama_model_3=text("OLLAMA_MODEL_3", defaults.ollama_model_3),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
             dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),

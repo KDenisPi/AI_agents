@@ -136,7 +136,7 @@ class MetricStorage:
         self._connection = pymysql.connect(
             host=self._config.db_host,
             port=self._config.db_port,
-            user=self._config.db_user_reasonly,
+            user=self._config.db_user_readonly,
             password=self._config.db_password_readonly,
             database=self._config.db_name,
             charset="utf8mb4",
