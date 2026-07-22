@@ -6,6 +6,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
+from Config import Config
 from HttpClient import MyHttpClient
 
 logging.basicConfig(level=logging.INFO)
@@ -15,12 +16,12 @@ class McpWeatherServer:
     """
     Base template for an MCP server.
     """
-    def __init__(self, name: str = "mcp-weather-server", dry_run: bool = False):
+    def __init__(self, config: Config, name: str = "mcp-weather-server", dry_run: bool = False):
         self.name = name
         self.server = Server(name)
         self._register_handlers()
         self._base_path = "/weather"
-        self._http_client = MyHttpClient("http://192.168.1.7:8080/api/status")
+        self._http_client = MyHttpClient(config.weather_station_url)
         self._dry_run = dry_run
 
     @property
