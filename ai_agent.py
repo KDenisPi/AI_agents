@@ -65,7 +65,13 @@ def demo():
     try:
         location = config.weather_location_name
         print("-- get_current() (all locations) --")
-        print(format_current(agent.storage.get_current()))
+        print(format_current(agent.storage.get_current(metrics=['temperature', 'humidity'])))
+
+        print("-- inside locations --")
+        print(str(agent.storage.inside_locations))
+
+        print("-- outside locations --")
+        print(str(agent.storage.outside_locations))
 
         #print("\n-- get_stats_last_hours('temperature', 24) (all locations) --")
         #print(format_stats(agent.storage.get_stats_last_hours("temperature", 24)))
@@ -75,7 +81,7 @@ def demo():
 
         print("\n-- summarize_current() --")
         try:
-            print(agent.summarize_current())
+            print(agent.summarize_current(metrics=['temperature', 'humidity']))
         except Exception as e:
             print(f"  (model_small unreachable: {e})")
 

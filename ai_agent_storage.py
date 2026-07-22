@@ -195,14 +195,16 @@ class MetricStorage:
 
     @property
     def outside_locations(self) -> list[str]:
-        """Location names with outside=1, loaded lazily and cached."""
+        """Location names with outside=1, loaded lazily and cached.
+        Call refresh_locations() to reload."""
         if self._outside_locations is None:
             self.refresh_locations()
         return list(self._outside_locations)
 
     @property
     def inside_locations(self) -> list[str]:
-        """Location names with outside=0/NULL, loaded lazily and cached."""
+        """Location names with outside=0/NULL, loaded lazily and cached.
+        Call refresh_locations() to reload."""
         if self._inside_locations is None:
             self.refresh_locations()
         return list(self._inside_locations)
