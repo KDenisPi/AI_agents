@@ -7,6 +7,7 @@ list of variables and their defaults.
 import logging
 import os
 from dataclasses import dataclass
+from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -60,16 +61,37 @@ class Config:
     # --- Logging ---
     # One of DEBUG, INFO, WARNING, ERROR, CRITICAL.
     log_level: str = "INFO"
+    # Rotated every 24h from process start. Empty disables file logging -
+    # console output only.
+    log_file: str = "logs/app.log"
+    # Rotated log files to keep before the oldest is deleted. 0 keeps all.
+    log_backup_count: int = 7
 
     def configure_logging(self) -> None:
-        """Set up the root logger from log_level. Call this once, from each
-        entry point, right after Config.from_env() - library modules should
-        only do logging.getLogger(__name__), never logging.basicConfig().
+        """Set up the root logger from log_level/log_file. Call this once,
+        from each entry point, right after Config.from_env() - library
+        modules should only do logging.getLogger(__name__), never
+        logging.basicConfig().
         """
-        logging.basicConfig(
-            level=self.log_level.upper(),
-            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        )
+        formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+        if self.log_file:
+            log_path = Path(self.log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            handlers.append(
+                TimedRotatingFileHandler(
+                    log_path,
+                    when="D",
+                    interval=1,
+                    backupCount=self.log_backup_count,
+                )
+            )
+
+        for handler in handlers:
+            handler.setFormatter(formatter)
+
+        logging.basicConfig(level=self.log_level.upper(), handlers=handlers)
 
     @classmethod
     def from_env(cls) -> "Config":
@@ -116,4 +138,6 @@ class Config:
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),
             default_location_name=text("DEFAULT_LOCATION_NAME", defaults.default_location_name),
             log_level=text("LOG_LEVEL", defaults.log_level),
+            log_file=text("LOG_FILE", defaults.log_file),
+            log_backup_count=number("LOG_BACKUP_COUNT", defaults.log_backup_count),
         )
