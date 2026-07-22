@@ -20,6 +20,21 @@ logger = logging.getLogger("ollama")
 
 DEFAULT_CONTEXT_DIR = Path("ollama_sessions")
 
+# Rough token budget for the verbatim history chat() sends, and how many of
+# the most recent messages are always kept verbatim once that budget is
+# exceeded. Both are conservative defaults sized for a small model's default
+# context window - tune them (via the constructor) to the actual num_ctx of
+# whatever model you point this at.
+DEFAULT_MAX_HISTORY_TOKENS = 3000
+DEFAULT_KEEP_RECENT_MESSAGES = 10
+
+
+def _estimate_tokens(messages: list[dict]) -> int:
+    """~4 chars/token is a coarse but model-agnostic estimate - good enough
+    to decide when to prune without calling out to a tokenizer."""
+    chars = sum(len(m.get("content", "")) for m in messages)
+    return chars // 4
+
 
 def _slug(model: str) -> str:
     """Filename-safe form of a model name - 'llama3.1:8b' -> 'llama3.1_8b'.
@@ -115,6 +130,8 @@ class OllamaClient:
         context_dir: str | Path = DEFAULT_CONTEXT_DIR,
         options: dict | None = None,
         timeout: float = 60,
+        max_history_tokens: int | None = DEFAULT_MAX_HISTORY_TOKENS,
+        keep_recent_messages: int = DEFAULT_KEEP_RECENT_MESSAGES,
     ):
         self.url = url.rstrip("/")
         self._model = model
@@ -132,8 +149,13 @@ class OllamaClient:
         # Not persisted with the rest of the history - re-sent fresh on every
         # request, so changing it doesn't mean rewriting old session files.
         self._system = system
+        # None disables pruning entirely. Rounded up to even so the kept tail
+        # always starts on a user turn, matching chat()'s user/assistant
+        # alternation.
+        self.max_history_tokens = max_history_tokens
+        self.keep_recent_messages = keep_recent_messages + (keep_recent_messages % 2)
         self._last_metrics: dict | None = None
-        self._messages: list[dict] = self._load()
+        self._summary, self._messages = self._load()
 
     @property
     def model(self) -> str:
@@ -151,15 +173,33 @@ class OllamaClient:
 
     @property
     def context(self) -> list[dict]:
-        """Read-only view of the current conversation history."""
+        """Read-only view of the verbatim (unsummarized) conversation
+        history - what chat() would send is this plus summary and system."""
         return list(self._messages)
+
+    @property
+    def summary(self) -> str | None:
+        """Read-only - the folded-in summary of turns older than the kept
+        tail, or None if history hasn't needed pruning yet."""
+        return self._summary
 
     @_timed
     def chat(self, prompt: str) -> str:
-        """Send `prompt` plus the full saved history (system prompt first),
-        and append both sides of the exchange to that history."""
+        """Send `prompt` plus the saved history: system prompt, then the
+        summary of anything pruned off the front, then the verbatim recent
+        turns. Appends both sides of the exchange to that history, pruning
+        the oldest turns into the summary first if it's grown past
+        max_history_tokens."""
         self._messages.append({"role": "user", "content": prompt})
-        reply = self._request(self._messages)
+        self._enforce_history_budget()
+
+        history = self._messages
+        if self._summary:
+            history = [
+                {"role": "system", "content": f"Earlier in this conversation: {self._summary}"}
+            ] + history
+        reply = self._request(history)
+
         self._messages.append({"role": "assistant", "content": reply})
         self._save()
         return reply
@@ -174,11 +214,70 @@ class OllamaClient:
         return self._request([{"role": "user", "content": prompt}])
 
     def reset(self):
-        """Drop conversation history. The system prompt isn't part of it -
-        it's re-sent fresh from self._system on every call - so there's
-        nothing of it to keep."""
+        """Drop conversation history and any accumulated summary. The
+        system prompt isn't part of either - it's re-sent fresh from
+        self._system on every call - so there's nothing of it to keep."""
         self._messages = []
+        self._summary = None
         self._save()
+
+    def _enforce_history_budget(self) -> None:
+        """Once self._messages passes max_history_tokens, fold everything
+        but the most recent keep_recent_messages into self._summary via one
+        extra model call. Ollama would otherwise silently drop whatever
+        falls off the front once the model's context window fills - this
+        keeps that loss intentional and recorded instead of implicit."""
+        if self.max_history_tokens is None:
+            return
+        if _estimate_tokens(self._messages) <= self.max_history_tokens:
+            return
+        if len(self._messages) <= self.keep_recent_messages:
+            return  # nothing older than the kept tail to fold in
+
+        # chat() calls this right after appending the new user prompt, so
+        # self._messages is transiently odd-length (...assistant, user).
+        # Round the boundary down to even so `recent` still starts on a
+        # user turn rather than a dangling assistant one.
+        boundary = len(self._messages) - self.keep_recent_messages
+        boundary -= boundary % 2
+        if boundary <= 0:
+            return
+        older, recent = self._messages[:boundary], self._messages[boundary:]
+
+        summary = self._summarize(older)
+        self._summary = summary
+        self._messages = recent
+        logger.info(
+            "chat(%s): folded %d older message(s) into summary (session %s)",
+            self.model, len(older), self.session_id,
+        )
+
+    def _summarize(self, messages: list[dict]) -> str:
+        """One-off, unlogged-by-@_timed call asking the same model to
+        compress `messages` (plus any existing summary, so repeated pruning
+        keeps compounding instead of losing everything before the last
+        round) into a short paragraph of prior context."""
+        transcript = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
+        if self._summary:
+            transcript = f"Summary so far: {self._summary}\n{transcript}"
+        instruction = (
+            "Summarize the earlier conversation below in a short paragraph, "
+            "keeping any facts, numbers, or decisions a reader would need to "
+            "follow later messages. Do not add anything not present below.\n\n"
+            + transcript
+        )
+        response = requests.post(
+            f"{self.url}/api/chat",
+            json={
+                "model": self.model,
+                "messages": [{"role": "user", "content": instruction}],
+                "stream": False,
+                "options": self.options,
+            },
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.json()["message"]["content"]
 
     def _request(self, messages: list[dict]) -> str:
         request_messages = messages
@@ -201,19 +300,26 @@ class OllamaClient:
         self._last_metrics = payload  # picked up by @_timed for the log line
         return payload["message"]["content"]
 
-    def _load(self) -> list[dict]:
+    def _load(self) -> tuple[str | None, list[dict]]:
         if not self._context_file.exists():
-            return []
+            return None, []
+
+        data = json.loads(self._context_file.read_text())
+        if isinstance(data, list):
+            # Pre-summary session file: just the message list.
+            summary, messages = None, data
+        else:
+            summary, messages = data.get("summary"), data.get("messages", [])
+
         # Older session files may have a persisted system message from
         # before it moved to self._system - drop it so it isn't resent as
         # a stray turn and duplicated alongside the fresh one.
-        return [
-            m for m in json.loads(self._context_file.read_text())
-            if m.get("role") != "system"
-        ]
+        messages = [m for m in messages if m.get("role") != "system"]
+        return summary, messages
 
     def _save(self):
-        self._context_file.write_text(json.dumps(self._messages, indent=2))
+        payload = {"summary": self._summary, "messages": self._messages}
+        self._context_file.write_text(json.dumps(payload, indent=2))
 
 
 def demo():
