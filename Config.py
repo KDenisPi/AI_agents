@@ -4,6 +4,7 @@ a .env file next to this module). See collector.env.example for the full
 list of variables and their defaults.
 """
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -56,6 +57,20 @@ class Config:
     default_location_id: int = 0
     default_location_name: str = "Unassigned"
 
+    # --- Logging ---
+    # One of DEBUG, INFO, WARNING, ERROR, CRITICAL.
+    log_level: str = "INFO"
+
+    def configure_logging(self) -> None:
+        """Set up the root logger from log_level. Call this once, from each
+        entry point, right after Config.from_env() - library modules should
+        only do logging.getLogger(__name__), never logging.basicConfig().
+        """
+        logging.basicConfig(
+            level=self.log_level.upper(),
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        )
+
     @classmethod
     def from_env(cls) -> "Config":
         load_dotenv(Path(__file__).with_name(".env"))
@@ -100,4 +115,5 @@ class Config:
             dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),
             default_location_name=text("DEFAULT_LOCATION_NAME", defaults.default_location_name),
+            log_level=text("LOG_LEVEL", defaults.log_level),
         )

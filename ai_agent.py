@@ -58,6 +58,7 @@ class AiAgent:
 
 def demo():
     config = Config.from_env()
+    config.configure_logging()
     agent = AiAgent(config)
     try:
         location = config.weather_location_name

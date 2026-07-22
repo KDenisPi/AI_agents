@@ -80,7 +80,6 @@ import logging
 
 import requests
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("hubitat")
 
 

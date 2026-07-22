@@ -17,7 +17,6 @@ from McpClientPersistent import MCPClientPersistent
 from Reading import Reading
 from Source import Source, to_float
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("weather-mcp-source")
 
 WEATHER_TOOL = "weather_info"
