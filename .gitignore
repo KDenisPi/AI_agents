@@ -1,3 +1,4 @@
 __pycache__/
 server.log
 .env
+db/weather_users.sql

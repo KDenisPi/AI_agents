@@ -87,21 +87,11 @@ CREATE TABLE IF NOT EXISTS `weather`.`metering` (
 ENGINE = InnoDB
 COMMENT = 'Keep metering values from sensors';
 
-DROP USER IF EXISTS 'weather'@'%';
-DROP USER IF EXISTS 'weather_read'@'%';
-DROP USER IF EXISTS 'weather_admin'@'%';
-DROP USER IF EXISTS 'weather_admin'@'127.0.0.1';
-
-CREATE USER 'weather' IDENTIFIED BY 'Dk94404!';
-
-GRANT SELECT, INSERT, TRIGGER, UPDATE, DELETE ON TABLE `weather`.* TO 'weather';
-GRANT EXECUTE ON `weather`.* TO 'weather';
-CREATE USER 'weather_read' IDENTIFIED BY 'DkRead94404!';
-
-GRANT SELECT ON TABLE `weather`.* TO 'weather_read';
-CREATE USER 'weather_admin'@'127.0.0.1' IDENTIFIED BY 'Dk94404!';
-
-GRANT ALL ON `weather`.* TO 'weather_admin'@'127.0.0.1';
+-- User creation and passwords live in db/weather_users.sql (gitignored) -
+-- copy db/weather_users.sql.example, fill in real passwords matching your
+-- .env's DB_PASSWORD/DB_PASSWORD_READONLY, and run it after this script:
+--   mysql < db/weather.sql
+--   mysql < db/weather_users.sql
 
 SET SQL_MODE=@OLD_SQL_MODE;
 SET FOREIGN_KEY_CHECKS=@OLD_FOREIGN_KEY_CHECKS;

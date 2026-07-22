@@ -1,0 +1,21 @@
+-- Copy to db/weather_users.sql, fill in real passwords matching your
+-- .env's DB_PASSWORD/DB_PASSWORD_READONLY, and run it after weather.sql
+-- has created the schema:
+--   mysql < db/weather.sql
+--   mysql < db/weather_users.sql
+
+DROP USER IF EXISTS 'weather'@'%';
+DROP USER IF EXISTS 'weather_read'@'%';
+DROP USER IF EXISTS 'weather_admin'@'%';
+DROP USER IF EXISTS 'weather_admin'@'127.0.0.1';
+
+CREATE USER 'weather' IDENTIFIED BY 'CHANGE_ME';
+
+GRANT SELECT, INSERT, TRIGGER, UPDATE, DELETE ON TABLE `weather`.* TO 'weather';
+GRANT EXECUTE ON `weather`.* TO 'weather';
+CREATE USER 'weather_read' IDENTIFIED BY 'CHANGE_ME';
+
+GRANT SELECT ON TABLE `weather`.* TO 'weather_read';
+CREATE USER 'weather_admin'@'127.0.0.1' IDENTIFIED BY 'CHANGE_ME';
+
+GRANT ALL ON `weather`.* TO 'weather_admin'@'127.0.0.1';
