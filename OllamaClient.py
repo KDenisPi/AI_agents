@@ -6,13 +6,71 @@ other's state, and a new instance can resume a prior conversation just by
 passing back the same session_id.
 """
 
+import functools
 import json
+import logging
+import time
 import uuid
 from pathlib import Path
 
 import requests
 
+logger = logging.getLogger("ollama")
+
 DEFAULT_CONTEXT_DIR = Path("ollama_sessions")
+
+
+def _format_tokens(metrics: dict | None) -> str:
+    """Token counts and generation rate from an Ollama response, as a log
+    suffix. Empty string if the server did not report them.
+    """
+    if not metrics:
+        return ""
+
+    generated = metrics.get("eval_count")
+    prompt = metrics.get("prompt_eval_count")
+    counts = [f"{n} {label}" for n, label in ((generated, "gen"), (prompt, "prompt")) if n]
+    if not counts:
+        return ""
+
+    suffix = " - " + " + ".join(counts) + " tokens"
+    # eval_duration is generation time alone, in nanoseconds - a fairer rate
+    # than dividing by wall time, which also covers queueing and the prompt.
+    eval_ns = metrics.get("eval_duration")
+    if generated and eval_ns:
+        suffix += f", {generated / (eval_ns / 1e9):.1f} tok/s"
+    return suffix
+
+
+def _timed(method):
+    """Log which model was called, how long it took, and what it produced.
+    Wraps in try/finally so a timeout or HTTP error is timed too - those are
+    the calls whose duration is most worth seeing. For methods of a class
+    exposing .model, which may record an Ollama response dict in
+    self._last_metrics to have its token counts logged too.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        self._last_metrics = None  # never report the previous call's numbers
+        start = time.perf_counter()
+        ok = False
+        try:
+            result = method(self, *args, **kwargs)
+            ok = True
+            return result
+        finally:
+            logger.log(
+                logging.INFO if ok else logging.WARNING,
+                "%s(%s) %s in %.2fs%s",
+                method.__name__,
+                self.model,
+                "ok" if ok else "failed",
+                time.perf_counter() - start,
+                _format_tokens(self._last_metrics),
+            )
+
+    return wrapper
 
 
 class OllamaClient:
@@ -46,6 +104,7 @@ class OllamaClient:
         self._context_dir.mkdir(parents=True, exist_ok=True)
         self._context_file = self._context_dir / f"{self.session_id}.json"
 
+        self._last_metrics: dict | None = None
         self._messages: list[dict] = self._load()
         if not self._messages and system:
             self._messages.append({"role": "system", "content": system})
@@ -60,6 +119,7 @@ class OllamaClient:
         """Read-only view of the current conversation history."""
         return list(self._messages)
 
+    @_timed
     def chat(self, prompt: str) -> str:
         self._messages.append({"role": "user", "content": prompt})
 
@@ -75,7 +135,9 @@ class OllamaClient:
         )
         response.raise_for_status()
 
-        reply = response.json()["message"]["content"]
+        payload = response.json()
+        self._last_metrics = payload  # picked up by @_timed for the log line
+        reply = payload["message"]["content"]
         self._messages.append({"role": "assistant", "content": reply})
         self._save()
         return reply
