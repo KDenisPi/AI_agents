@@ -57,6 +57,14 @@ class Config:
     ollama_max_history_tokens: int = 3000
     ollama_keep_recent_messages: int = 10
 
+    # --- AI agent HTTP API (ai_agent_server.py) ---
+    ai_agent_host: str = "0.0.0.0"
+    ai_agent_port: int = 8100
+    # Where accepted requests get their answer POSTed back to once they're
+    # done - see ai_agent_server.py's module docstring for the contract.
+    ai_client_callback_url: str = "http://127.0.0.1:9100/api/response"
+    ai_client_callback_timeout: int = 10
+
     # --- Scheduling ---
     interval_seconds: int = 600
 
@@ -148,6 +156,14 @@ class Config:
             ),
             ollama_keep_recent_messages=number(
                 "OLLAMA_KEEP_RECENT_MESSAGES", defaults.ollama_keep_recent_messages
+            ),
+            ai_agent_host=text("AI_AGENT_HOST", defaults.ai_agent_host),
+            ai_agent_port=number("AI_AGENT_PORT", defaults.ai_agent_port),
+            ai_client_callback_url=text(
+                "AI_CLIENT_CALLBACK_URL", defaults.ai_client_callback_url
+            ),
+            ai_client_callback_timeout=number(
+                "AI_CLIENT_CALLBACK_TIMEOUT", defaults.ai_client_callback_timeout
             ),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
             dry_run=flag("DRY_RUN", defaults.dry_run),
