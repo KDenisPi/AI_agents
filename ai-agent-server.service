@@ -1,0 +1,29 @@
+# Install:
+#   sudo cp ai-agent-server.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ai-agent-server
+#   journalctl -u ai-agent-server -f
+#
+# Adjust User/WorkingDirectory/ExecStart if the checkout lives elsewhere.
+# Separate unit from weather-collector.service on purpose - two independent
+# long-running processes (the collect loop vs. this HTTP API) need their own
+# PID each for systemd to restart just the one that actually crashed.
+
+[Unit]
+Description=AI agent HTTP API (ai_agent_server.py)
+# Reachability of Ollama itself is checked per-request, not required at
+# start - this ordering is only for MariaDB, which AiAgent's storage layer
+# needs a connection to.
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=denis
+WorkingDirectory=/home/denis/projects/AI_agents
+ExecStart=/usr/bin/python3 /home/denis/projects/AI_agents/ai_agent_server.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
