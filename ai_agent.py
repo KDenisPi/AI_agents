@@ -79,10 +79,11 @@ class AiAgent:
             output_dir=config.voice_output_dir,
         )
 
-    def say(self, text: str, path: str | None = None) -> Path:
+    def say(self, text: str, path: str | None = None, voice: str | None = None) -> Path:
         """Speak `text` into a .wav and return where it was written.
-        Defaults to a timestamped file under Config.voice_output_dir."""
-        return self.model_text_to_voice.synthesize(text, path)
+        Defaults to a timestamped file under Config.voice_output_dir, in
+        Config.ollama_voice unless `voice` names another one."""
+        return self.model_text_to_voice.synthesize(text, path, voice)
 
     def summarize_current(
         self, locations: list[str] | None = None, metrics: list[str] | None = None

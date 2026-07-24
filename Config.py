@@ -71,6 +71,13 @@ class Config:
     # done - see ai_agent_server.py's module docstring for the contract.
     ai_client_callback_url: str = "http://127.0.0.1:9100/api/response"
     ai_client_callback_timeout: int = 10
+    # Base URL clients should use to reach this server, used to build the
+    # audio_url in callbacks. Empty (the default) sends a root-relative URL
+    # instead, which the client resolves against the address it already
+    # called - always correct, and the only safe default since ai_agent_host
+    # is a bind address ("0.0.0.0"), not a reachable one. Set this when the
+    # link has to stand on its own, e.g. handed to a separate media player.
+    ai_agent_public_url: str = ""
 
     # --- Scheduling ---
     interval_seconds: int = 600
@@ -176,6 +183,7 @@ class Config:
             ai_client_callback_timeout=number(
                 "AI_CLIENT_CALLBACK_TIMEOUT", defaults.ai_client_callback_timeout
             ),
+            ai_agent_public_url=text("AI_AGENT_PUBLIC_URL", defaults.ai_agent_public_url),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
             dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),

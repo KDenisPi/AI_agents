@@ -22,6 +22,7 @@ then held in memory, so the first call is much slower than the rest.
 
 import logging
 import re
+import threading
 import time
 import wave
 from datetime import datetime
@@ -52,7 +53,26 @@ FIRST_AUDIO_TOKEN = 10
 VOICES = ("tara", "leah", "jess", "leo", "dan", "mia", "zac", "zoe")
 DEFAULT_VOICE = "tara"
 
+# Orpheus was trained on single utterances and simply stops early on longer
+# input - measured here at ~50s of audio from 1044 characters, with the tail
+# missing. It is not a context-window error and Ollama reports an ordinary
+# "stop", so there is nothing to detect after the fact: the only reliable
+# fix is to not ask for too much at once. Longer text is split and the
+# pieces joined back together.
+MAX_CHUNK_CHARS = 400
+# Silence inserted between those pieces, so two separately generated
+# sentences don't butt up against each other.
+CHUNK_GAP_SECONDS = 0.15
+
 _TOKEN_RE = re.compile(r"<custom_token_(\d+)>")
+
+# One process-wide vocoder shared by every caller, so its use has to be
+# serialised: torch modules are not safe to call concurrently, and two
+# threads racing the lazy load would fetch and build it twice. Callers can
+# be genuinely concurrent - ai_agent_server.py runs requests in parallel
+# threads. Only the decode is held here; the slow part of synthesize(), the
+# generation request to Ollama, stays outside so it still overlaps.
+_vocoder_lock = threading.Lock()
 
 
 def _safe(name: str) -> str:
@@ -127,6 +147,66 @@ def _to_codebooks(codes: list[int], device: str) -> list[torch.Tensor]:
     ]
 
 
+_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+
+
+def split_text(text: str, limit: int = MAX_CHUNK_CHARS) -> list[str]:
+    """Break `text` into pieces small enough for one synthesize call.
+
+    Splits on sentence boundaries so the joins land where a speaker would
+    pause anyway; a single sentence longer than `limit` is split on
+    whitespace instead, which is audible but still better than losing it.
+    """
+    chunks: list[str] = []
+    pending = ""
+
+    def flush() -> None:
+        nonlocal pending
+        if pending:
+            chunks.append(pending)
+            pending = ""
+
+    for sentence in _SENTENCE_END.split(text.strip()):
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+
+        if len(sentence) > limit:
+            flush()
+            while len(sentence) > limit:
+                cut = sentence.rfind(" ", 0, limit)
+                if cut <= 0:  # one unbroken run of characters - cut mid-word
+                    cut = limit
+                chunks.append(sentence[:cut].strip())
+                sentence = sentence[cut:].strip()
+            pending = sentence
+        elif not pending:
+            pending = sentence
+        elif len(pending) + 1 + len(sentence) <= limit:
+            pending = f"{pending} {sentence}"
+        else:
+            flush()
+            pending = sentence
+
+    flush()
+    return chunks
+
+
+def _join(segments: list[np.ndarray]) -> np.ndarray:
+    """Concatenate chunk audio with a short gap, so sentences don't run
+    into each other where two separate generations meet."""
+    if len(segments) == 1:
+        return segments[0]
+
+    gap = np.zeros(int(SAMPLE_RATE * CHUNK_GAP_SECONDS), dtype=np.float32)
+    joined: list[np.ndarray] = []
+    for index, segment in enumerate(segments):
+        if index:
+            joined.append(gap)
+        joined.append(segment)
+    return np.concatenate(joined)
+
+
 def _write_wav(path: Path, samples: np.ndarray) -> None:
     """16-bit mono PCM. Uses the stdlib wave module rather than soundfile
     to keep this off libsndfile."""
@@ -187,18 +267,8 @@ class TextToVoice:
         """Read-only - the model is fixed for the life of the client."""
         return self._model
 
-    def synthesize(
-        self, text: str, path: str | Path | None = None, voice: str | None = None
-    ) -> Path:
-        """Speak `text` into a .wav and return where it was written.
-
-        Defaults to a timestamped file in the output directory; pass `path`
-        to choose one. Raises TextToVoiceError if the model returned no
-        usable audio tokens.
-        """
-        voice = voice or self.voice
-        started = time.perf_counter()
-
+    def _generate(self, text: str, voice: str) -> list[int]:
+        """SNAC codes for one chunk of text, straight from the model."""
         response = requests.post(
             f"{self.url}/api/generate",
             json={
@@ -213,7 +283,6 @@ class TextToVoice:
             timeout=self.timeout,
         )
         response.raise_for_status()
-        generated = time.perf_counter() - started
 
         codes = parse_snac_tokens(response.json().get("response", ""))
         if not codes:
@@ -221,11 +290,39 @@ class TextToVoice:
                 f"{self.model} returned no usable SNAC tokens for {text[:60]!r} - "
                 "check that it is an Orpheus-style TTS model"
             )
+        return codes
 
-        model, device = _vocoder()
-        with torch.inference_mode():
-            audio = model.decode(_to_codebooks(codes, device))
-        samples = audio.squeeze().float().cpu().numpy()
+    def _decode(self, codes: list[int]) -> np.ndarray:
+        with _vocoder_lock:
+            model, device = _vocoder()
+            with torch.inference_mode():
+                audio = model.decode(_to_codebooks(codes, device))
+        return audio.squeeze().float().cpu().numpy()
+
+    def synthesize(
+        self, text: str, path: str | Path | None = None, voice: str | None = None
+    ) -> Path:
+        """Speak `text` into a .wav and return where it was written.
+
+        Text longer than MAX_CHUNK_CHARS is synthesized in pieces and
+        joined, so the answer isn't cut off. Defaults to a timestamped file
+        in the output directory; pass `path` to choose one. Raises
+        TextToVoiceError if the model returned no usable audio tokens.
+        """
+        voice = voice or self.voice
+        started = time.perf_counter()
+
+        chunks = split_text(text)
+        if not chunks:
+            raise TextToVoiceError("No text to speak")
+
+        segments, frames = [], 0
+        for chunk in chunks:
+            codes = self._generate(chunk, voice)
+            frames += len(codes) // TOKENS_PER_FRAME
+            segments.append(self._decode(codes))
+        generated = time.perf_counter() - started
+        samples = _join(segments)
 
         if path is None:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -237,9 +334,9 @@ class TextToVoice:
         seconds = len(samples) / SAMPLE_RATE
         elapsed = time.perf_counter() - started
         logger.info(
-            "synthesize(%s, voice=%s) %d frame(s) -> %.1fs of audio in %.2fs "
-            "(%.1fx realtime, %.2fs generating) -> %s",
-            self.model, voice, len(codes) // TOKENS_PER_FRAME, seconds,
+            "synthesize(%s, voice=%s) %d char(s) in %d chunk(s), %d frame(s) -> "
+            "%.1fs of audio in %.2fs (%.1fx realtime, %.2fs generating) -> %s",
+            self.model, voice, len(text), len(chunks), frames, seconds,
             elapsed, seconds / elapsed if elapsed else 0, generated, path,
         )
         return path
