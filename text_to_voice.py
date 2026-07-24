@@ -86,9 +86,15 @@ def _safe(name: str) -> str:
 
 @lru_cache(maxsize=1)
 def _vocoder() -> tuple[SNAC, str]:
-    """The SNAC model, downloaded once and cached for the process. Picks up
-    a GPU if this machine has both one and a CUDA-enabled torch build;
-    decoding a sentence on CPU is only a second or so either way."""
+    """The SNAC model, downloaded once and cached for the process.
+
+    Uses the GPU when torch was built with CUDA, which is worth having:
+    vocoding is a measurable share of each request (5.7s of a 39.7s call
+    on CPU, ~4s per 21s of audio) and it scales with the length of the
+    answer. Falls back to CPU otherwise - a CPU-only torch build, or a
+    driver too old for the build's CUDA version, both just mean slower,
+    never broken.
+    """
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = SNAC.from_pretrained(SNAC_REPO).eval().to(device)
     logger.info("Loaded SNAC vocoder %s on %s", SNAC_REPO, device)
@@ -366,12 +372,20 @@ class TextToVoice:
         if not chunks:
             raise TextToVoiceError("No text to speak")
 
-        segments, frames = [], 0
+        # Timed apart so the log says which half the time went to: the model
+        # generating tokens on the Ollama host, or this process vocoding them.
+        # They answer different questions - one is a remote GPU's problem, the
+        # other is this machine's.
+        segments, frames, generating, vocoding = [], 0, 0.0, 0.0
         for chunk in chunks:
+            mark = time.perf_counter()
             codes = self._generate(chunk, voice)
+            generating += time.perf_counter() - mark
+
             frames += len(codes) // TOKENS_PER_FRAME
+            mark = time.perf_counter()
             segments.append(self._decode(codes))
-        generated = time.perf_counter() - started
+            vocoding += time.perf_counter() - mark
         samples = _join(segments)
 
         if path is None:
@@ -385,9 +399,11 @@ class TextToVoice:
         elapsed = time.perf_counter() - started
         logger.info(
             "synthesize(%s, voice=%s) %d char(s) in %d chunk(s), %d frame(s) -> "
-            "%.1fs of audio in %.2fs (%.1fx realtime, %.2fs generating) -> %s",
+            "%.1fs of audio in %.2fs (%.1fx realtime, %.2fs generating, "
+            "%.2fs vocoding on %s) -> %s",
             self.model, voice, len(text), len(chunks), frames, seconds,
-            elapsed, seconds / elapsed if elapsed else 0, generated, path,
+            elapsed, seconds / elapsed if elapsed else 0, generating,
+            vocoding, _vocoder()[1], path,
         )
         return path
 
