@@ -20,5 +20,8 @@ python-dateutil
 # build - installing this file on its own instead gets the default PyPI
 # wheel, which carries ~2.5 GB of CUDA libraries this project never uses.
 numpy
-torch
+#For developer computer
+#torch --index-url https://download.pytorch.org/whl/cu126
+#For PRO computer
+torch --index-url https://download.pytorch.org/whl/cu130
 snac
