@@ -77,6 +77,7 @@ class AiAgent:
             config.ollama_model_text_to_voice,
             voice=config.ollama_voice,
             output_dir=config.voice_output_dir,
+            retention_hours=config.voice_retention_hours,
         )
 
     def say(self, text: str, path: str | None = None, voice: str | None = None) -> Path:

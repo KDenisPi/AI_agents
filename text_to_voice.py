@@ -64,6 +64,9 @@ MAX_CHUNK_CHARS = 400
 # sentences don't butt up against each other.
 CHUNK_GAP_SECONDS = 0.15
 
+# How long a synthesized wav is kept before cleanup() removes it.
+DEFAULT_RETENTION_HOURS = 24
+
 _TOKEN_RE = re.compile(r"<custom_token_(\d+)>")
 
 # One process-wide vocoder shared by every caller, so its use has to be
@@ -241,10 +244,15 @@ class TextToVoice:
         output_dir: str | Path = DEFAULT_OUTPUT_DIR,
         options: dict | None = None,
         timeout: float = 180,
+        retention_hours: float = DEFAULT_RETENTION_HOURS,
     ):
         self.url = url.rstrip("/")
         self._model = model
         self.voice = voice
+        # Synthesized audio is only useful until the client has fetched it,
+        # and at roughly 1.5 MB per 30s answer it would otherwise grow
+        # without limit. 0 or less keeps everything.
+        self.retention_hours = retention_hours
         # Left empty by default so the model's own Modelfile settings apply -
         # Orpheus ships tuned temperature/top_p/repeat_penalty values, and
         # overriding them tends to make the audio worse, not better.
@@ -266,6 +274,45 @@ class TextToVoice:
     def model(self) -> str:
         """Read-only - the model is fixed for the life of the client."""
         return self._model
+
+    def cleanup(self, retention_hours: float | None = None) -> int:
+        """Delete wavs in the output directory last modified more than
+        retention_hours ago, returning how many were removed.
+
+        Called from synthesize(), so anything generating audio prunes as it
+        goes and no separate job is needed. Files written to an explicit
+        path outside the output directory are the caller's to manage.
+        """
+        hours = self.retention_hours if retention_hours is None else retention_hours
+        if hours <= 0:
+            return 0
+
+        cutoff = time.time() - hours * 3600
+        removed = freed = 0
+        # Non-recursive, and *.wav only. This deletes things, so the reach
+        # stays exactly the files this class writes - no walking into
+        # subdirectories a user may have put here, no other extensions.
+        for wav in sorted(self._output_dir.glob("*.wav")):
+            try:
+                stat = wav.stat()
+                if not wav.is_file() or stat.st_mtime >= cutoff:
+                    continue
+                wav.unlink()
+            except OSError as e:
+                # Raced with another process, or not ours to remove. Cleanup
+                # is housekeeping and must never fail the synthesis it runs
+                # alongside.
+                logger.warning("Could not remove %s: %s", wav, e)
+                continue
+            removed += 1
+            freed += stat.st_size
+
+        if removed:
+            logger.info(
+                "Removed %d wav file(s) older than %gh from %s, freeing %.1f MB",
+                removed, hours, self._output_dir, freed / 1e6,
+            )
+        return removed
 
     def _generate(self, text: str, voice: str) -> list[int]:
         """SNAC codes for one chunk of text, straight from the model."""
@@ -311,6 +358,9 @@ class TextToVoice:
         """
         voice = voice or self.voice
         started = time.perf_counter()
+        # Before generating, not after: a run that fails still prunes, and
+        # the file about to be written is never a candidate.
+        self.cleanup()
 
         chunks = split_text(text)
         if not chunks:

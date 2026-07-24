@@ -56,6 +56,10 @@ class Config:
     ollama_voice: str = "tara"
     # Where synthesized .wav files are written.
     voice_output_dir: str = "voice_output"
+    # How long those files are kept. They are only useful until the client
+    # has fetched them, and at roughly 1.5 MB per 30s answer the directory
+    # would otherwise grow without limit. 0 keeps everything.
+    voice_retention_hours: int = 24
     # Rough token budget (~4 chars/token) for the verbatim history
     # OllamaClient.chat() sends before folding older turns into a summary,
     # and how many of the most recent messages stay verbatim once it does.
@@ -169,6 +173,9 @@ class Config:
             ),
             ollama_voice=text("OLLAMA_VOICE", defaults.ollama_voice),
             voice_output_dir=text("VOICE_OUTPUT_DIR", defaults.voice_output_dir),
+            voice_retention_hours=number(
+                "VOICE_RETENTION_HOURS", defaults.voice_retention_hours
+            ),
             ollama_max_history_tokens=number(
                 "OLLAMA_MAX_HISTORY_TOKENS", defaults.ollama_max_history_tokens
             ),
