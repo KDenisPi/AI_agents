@@ -7,6 +7,12 @@ callback that follows, printing whatever comes back.
 Run:
     python ai_client/simple_client.py
     python ai_client/simple_client.py --agent-url http://192.168.1.57:8100
+    python ai_client/simple_client.py --voice          # spoken answer too
+    python ai_client/simple_client.py --voice leo      # in a named voice
+
+With --voice the callback carries an audio_url alongside the text - a link
+to a WAV on the agent, which is pruned after the agent's retention window,
+so fetch it rather than keeping the link.
 """
 
 import argparse
@@ -52,14 +58,21 @@ class CallbackHandler(BaseHTTPRequestHandler):
         pass  # quiet - the payload above is all we care about here
 
 
-def request_current(agent_url: str) -> None:
+def request_current(agent_url: str, voice: str | None = None) -> None:
     request_id = make_request_id()
     params = {"request_id": request_id}
+    if voice is not None:
+        # "" sends a bare "voice=", which the server reads the same as the
+        # "&voice" flag its docstring documents: present, so speak the
+        # answer, with no particular voice named.
+        params["voice"] = voice
+
+    query = "&".join(f"{k}={v}" if v else k for k, v in params.items())
     try:
         response = requests.get(f"{agent_url}/api/current", params=params, timeout=5)
-        print(f">> GET /api/current?request_id={request_id} -> {response.status_code} {response.text}")
+        print(f">> GET /api/current?{query} -> {response.status_code} {response.text}")
     except requests.RequestException as e:
-        print(f">> GET /api/current?request_id={request_id} -> failed: {e}")
+        print(f">> GET /api/current?{query} -> failed: {e}")
 
 
 def main() -> None:
@@ -69,6 +82,17 @@ def main() -> None:
     parser.add_argument(
         "--agent-url", default="http://127.0.0.1:8100", help="ai_agent_server.py base URL"
     )
+    # Optional value, mirroring the server's own "&voice[=<name>]": bare
+    # --voice asks for audio in the configured voice, --voice leo names one.
+    # Absent, no voice parameter is sent at all and the answer is text only.
+    parser.add_argument(
+        "--voice",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="NAME",
+        help="also ask for a spoken answer; optionally name a voice, e.g. --voice leo",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -77,12 +101,16 @@ def main() -> None:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     print(f"Listening for callbacks on http://{args.host}:{args.port}/api/response")
-    print(f"Sending requests to {args.agent_url}\n")
+    print(f"Sending requests to {args.agent_url}")
+    if args.voice is not None:
+        named = f" ({args.voice})" if args.voice else ""
+        print(f"Asking for spoken answers{named} - audio_url will be in the callback")
+    print()
 
     try:
         while True:
             input("Press Enter to send GET /api/current (Ctrl+C to quit)... ")
-            request_current(args.agent_url)
+            request_current(args.agent_url, args.voice)
     except (KeyboardInterrupt, EOFError):
         print("\nStopping")
     finally:
