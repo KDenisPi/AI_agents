@@ -12,3 +12,13 @@ vosk
 aiohttp
 pymysql
 python-dateutil
+
+# Speech synthesis (text_to_voice.py). snac is the vocoder that turns the
+# model's audio tokens into samples; it pulls einops and huggingface-hub.
+# The Dockerfile installs torch from PyTorch's CPU index before this file
+# is processed, so the requirement below is already satisfied by the CPU
+# build - installing this file on its own instead gets the default PyPI
+# wheel, which carries ~2.5 GB of CUDA libraries this project never uses.
+numpy
+torch
+snac
