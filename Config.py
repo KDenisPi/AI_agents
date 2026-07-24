@@ -75,12 +75,13 @@ class Config:
     # done - see ai_agent_server.py's module docstring for the contract.
     ai_client_callback_url: str = "http://127.0.0.1:9100/api/response"
     ai_client_callback_timeout: int = 10
-    # Base URL clients should use to reach this server, used to build the
-    # audio_url in callbacks. Empty (the default) sends a root-relative URL
-    # instead, which the client resolves against the address it already
-    # called - always correct, and the only safe default since ai_agent_host
-    # is a bind address ("0.0.0.0"), not a reachable one. Set this when the
-    # link has to stand on its own, e.g. handed to a separate media player.
+    # Base URL used to build the audio_url in callbacks. Empty (the default)
+    # takes it from the address the client used to reach the server, which
+    # needs no configuration and is right on a normal LAN - ai_agent_host is
+    # a bind address ("0.0.0.0") and cannot be used for this. Set it to pin
+    # the link where that address is wrong or untrusted: behind a proxy
+    # terminating on a different name, or where the Host header shouldn't be
+    # echoed into a URL the callback receiver will fetch.
     ai_agent_public_url: str = ""
 
     # --- Scheduling ---

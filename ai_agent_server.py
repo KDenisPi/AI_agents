@@ -30,9 +30,11 @@ AI_AGENT to Client (config.ai_client_callback_url, always POST):
         {"request_id": "<id or omitted>", "error": "..."}
 
     audio_url is null unless the request asked for voice. When it did, it
-    is a link to a WAV served from /audio (see config.voice_output_dir) -
-    root-relative by default, absolute if config.ai_agent_public_url is
-    set. If synthesis alone fails the text answer is still delivered, with
+    is an absolute link to a WAV served from /audio (see
+    config.voice_output_dir), built from the address the client used to
+    reach this server - override it with config.ai_agent_public_url. WAVs
+    are pruned after config.voice_retention_hours, so the link is not
+    permanent. If synthesis alone fails the text answer is still delivered, with
     audio_url null and the reason in an extra "audio_error" field: a
     spoken answer is a nice-to-have, and losing it is no reason to throw
     away an answer that already cost a model call.
@@ -95,12 +97,19 @@ def _ollama_reachable(config: Config, timeout: float = 2) -> bool:
         return False
 
 
-def _audio_url(config: Config, path: Path) -> str:
-    """Client-facing link to a synthesized WAV. Root-relative unless a
-    public base URL is configured - see Config.ai_agent_public_url."""
-    url = f"{AUDIO_URL_PREFIX}/{quote(path.name)}"
-    base = config.ai_agent_public_url.rstrip("/")
-    return f"{base}{url}" if base else url
+def _audio_url(config: Config, path: Path, base_url: str) -> str:
+    """Absolute link to a synthesized WAV.
+
+    Built from the address the client actually used to reach us, so the
+    link works without configuring anything - config.ai_agent_host is a
+    bind address ("0.0.0.0") and cannot be turned into a fetchable URL.
+    That address comes from the request's Host header, so set
+    config.ai_agent_public_url to pin it wherever the header can't be
+    trusted or doesn't match how clients reach the server, e.g. behind a
+    proxy terminating on a different name.
+    """
+    base = (config.ai_agent_public_url or base_url).rstrip("/")
+    return f"{base}{AUDIO_URL_PREFIX}/{quote(path.name)}"
 
 
 async def _post_callback(config: Config, payload: dict) -> None:
@@ -132,7 +141,16 @@ def make_app(config: Config) -> Starlette:
             return JSONResponse({"error": "model not available"}, status_code=503)
 
         _spawn(
-            _run_current(config, request.app.state.agent, request_id, wants_audio, voice)
+            _run_current(
+                config,
+                request.app.state.agent,
+                request_id,
+                wants_audio,
+                voice,
+                # Captured here because the callback is built long after the
+                # request object is gone.
+                str(request.base_url),
+            )
         )
         body = {"accepted": True}
         if request_id:
@@ -145,6 +163,7 @@ def make_app(config: Config) -> Starlette:
         request_id: str | None,
         wants_audio: bool,
         voice: str | None,
+        base_url: str,
     ) -> None:
         try:
             text = await asyncio.to_thread(agent.summarize_current)
@@ -156,7 +175,7 @@ def make_app(config: Config) -> Starlette:
             if wants_audio:
                 try:
                     path = await asyncio.to_thread(agent.say, text, voice=voice)
-                    payload["audio_url"] = _audio_url(config, path)
+                    payload["audio_url"] = _audio_url(config, path, base_url)
                 except Exception as e:
                     # The text answer has already cost a model call - send it
                     # rather than lose it to a failed nice-to-have.
