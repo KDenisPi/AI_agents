@@ -1,18 +1,22 @@
 """
-AI agent - ties the storage layer (ai_agent_storage.py) to two Ollama
+AI agent - ties the storage layer (ai_agent_storage.py) to the Ollama
 models built from Config's Ollama settings.
 
-AiAgent exposes model_small (cheap/frequent calls) and model_large
-(anything needing more reasoning), plus summarize_current(), which uses
-model_small to turn get_current() into a plain-language summary.
+AiAgent exposes model_small (cheap/frequent calls), model_large (anything
+needing more reasoning) and model_text_to_voice (speech synthesis), plus
+summarize_current(), which uses model_small to turn get_current() into a
+plain-language summary, and say(), which speaks text into a .wav.
 
 Each run starts a new conversation unless AiAgent is given a session_id,
 which resumes the one saved under that name.
 """
 
+from pathlib import Path
+
 from Config import Config
 from OllamaClient import OllamaClient, session_id_for
 from ai_agent_storage import MetricStorage, format_current, format_history, format_stats
+from text_to_voice import TextToVoice
 
 
 class AiAgent:
@@ -65,6 +69,20 @@ class AiAgent:
             max_history_tokens=config.ollama_max_history_tokens,
             keep_recent_messages=config.ollama_keep_recent_messages,
         )
+        # Not an OllamaClient: speech synthesis needs /api/generate with raw
+        # prompts and has no conversation to keep. No session_id for the
+        # same reason. See text_to_voice.py.
+        self.model_text_to_voice = TextToVoice(
+            config.ollama_url,
+            config.ollama_model_text_to_voice,
+            voice=config.ollama_voice,
+            output_dir=config.voice_output_dir,
+        )
+
+    def say(self, text: str, path: str | None = None) -> Path:
+        """Speak `text` into a .wav and return where it was written.
+        Defaults to a timestamped file under Config.voice_output_dir."""
+        return self.model_text_to_voice.synthesize(text, path)
 
     def summarize_current(
         self, locations: list[str] | None = None, metrics: list[str] | None = None

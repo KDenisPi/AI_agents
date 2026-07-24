@@ -48,7 +48,14 @@ class Config:
     # does not have for llama3.1.
     ollama_model_1: str = "llama3.1:8b"
     ollama_model_2: str = "qwen3.6"
-    ollama_model_3: str = "gpt-oss:20b"
+    # Speech synthesis (text_to_voice.py). Must be an Orpheus-style model
+    # that emits SNAC audio tokens - a general chat model returns prose and
+    # produces no audio at all.
+    ollama_model_text_to_voice: str = "sematre/orpheus:en-3b"
+    # One of text_to_voice.VOICES.
+    ollama_voice: str = "tara"
+    # Where synthesized .wav files are written.
+    voice_output_dir: str = "voice_output"
     # Rough token budget (~4 chars/token) for the verbatim history
     # OllamaClient.chat() sends before folding older turns into a summary,
     # and how many of the most recent messages stay verbatim once it does.
@@ -150,7 +157,11 @@ class Config:
             ollama_url=text("OLLAMA_URL", defaults.ollama_url),
             ollama_model_1=text("OLLAMA_MODEL_1", defaults.ollama_model_1),
             ollama_model_2=text("OLLAMA_MODEL_2", defaults.ollama_model_2),
-            ollama_model_3=text("OLLAMA_MODEL_3", defaults.ollama_model_3),
+            ollama_model_text_to_voice=text(
+                "OLLAMA_MODEL_TEXT_TO_VOICE", defaults.ollama_model_text_to_voice
+            ),
+            ollama_voice=text("OLLAMA_VOICE", defaults.ollama_voice),
+            voice_output_dir=text("VOICE_OUTPUT_DIR", defaults.voice_output_dir),
             ollama_max_history_tokens=number(
                 "OLLAMA_MAX_HISTORY_TOKENS", defaults.ollama_max_history_tokens
             ),
