@@ -21,10 +21,14 @@ location.outside flag, loaded lazily and cached; refresh_locations()
 reloads them from the `location` table.
 
 pymysql is blocking, same as WeatherDb.py - call these through
-asyncio.to_thread from async code.
+asyncio.to_thread from async code. One MetricStorage is safe to share
+between those threads: a pymysql connection carries one request at a time
+and interleaving two corrupts the wire protocol, so queries are
+serialised internally.
 """
 
 import logging
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -122,6 +126,11 @@ class MetricStorage:
         self._connection: pymysql.Connection | None = None
         self._outside_locations: list[str] | None = None
         self._inside_locations: list[str] | None = None
+        # Guards the single connection. Callers reach this from several
+        # threads at once (ai_agent_server.py runs each request in one), and
+        # two queries sharing a pymysql connection interleave their packets
+        # and leave the parser reading another query's bytes.
+        self._lock = threading.Lock()
 
     def _connect(self) -> pymysql.Connection:
         """Live connection, reconnecting if the server dropped us."""
@@ -316,12 +325,17 @@ class MetricStorage:
         return self.get_history(metric, end - timedelta(days=days), end, locations)
 
     def _query(self, query: str, args: tuple) -> list[dict]:
-        connection = self._connect()
-        with connection.cursor() as cursor:
-            cursor.execute(query, args)
-            return cursor.fetchall()
+        # Held across execute and fetch, not just execute: the result set is
+        # read off the same socket, so releasing early would let another
+        # thread's query overwrite the bytes this one is still reading.
+        with self._lock:
+            connection = self._connect()
+            with connection.cursor() as cursor:
+                cursor.execute(query, args)
+                return cursor.fetchall()
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        with self._lock:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
