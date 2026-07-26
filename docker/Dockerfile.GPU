@@ -22,8 +22,8 @@ RUN apt-get update \
 # across them and would pull the CUDA wheel whenever PyPI happens to be
 # ahead. Kept above the requirements copy so editing that file doesn't
 # invalidate this layer.
-COPY docker/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY docker/requirements_GPU.txt .
+RUN pip install --no-cache-dir -r requirements_GPU.txt
 
 COPY . .
 
@@ -34,4 +34,4 @@ COPY . .
 ENV HF_HOME=/app/.cache/huggingface
 RUN mkdir -p /app/.cache/huggingface && chmod -R 777 /app/.cache
 
-EXPOSE 8000
+EXPOSE 8100
