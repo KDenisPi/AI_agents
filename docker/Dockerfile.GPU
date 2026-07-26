@@ -34,4 +34,12 @@ COPY . .
 ENV HF_HOME=/app/.cache/huggingface
 RUN mkdir -p /app/.cache/huggingface && chmod -R 777 /app/.cache
 
+# Skip the network round-trip from_pretrained() otherwise makes on every
+# process start to verify the cached SNAC weights are current. Safe here
+# because /app is bind-mounted from the host, where HF_HOME above already
+# has them cached - a from-scratch run with no host cache would need this
+# unset (or a `docker run` without the bind mount) to fetch the weights the
+# first time.
+ENV HF_HUB_OFFLINE=1
+
 EXPOSE 8100

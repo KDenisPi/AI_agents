@@ -34,6 +34,12 @@ import requests
 import torch
 from snac import SNAC
 
+# oneDNN's AArch64 JIT backend (also named Xbyak) has a bug that mis-encodes
+# an immediate operand for some conv1d shapes on this CPU, crashing with
+# "bad err=15 ... illegal immediate parameter (range error)" - seen on Grace
+# CPUs. The vocoder is small, so the non-JIT fallback conv costs little.
+torch.backends.mkldnn.enabled = False
+
 logger = logging.getLogger("text-to-voice")
 
 DEFAULT_OUTPUT_DIR = Path("voice_output")

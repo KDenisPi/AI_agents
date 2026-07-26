@@ -51,7 +51,7 @@ class Config:
     # Speech synthesis (text_to_voice.py). Must be an Orpheus-style model
     # that emits SNAC audio tokens - a general chat model returns prose and
     # produces no audio at all.
-    ollama_model_text_to_voice: str = "sematre/orpheus:en-3b"
+    ollama_model_text_to_voice: str = "sematre/orpheus:ft-en-3b-q4_k_m" #"sematre/orpheus:en-3b"
     # One of text_to_voice.VOICES.
     ollama_voice: str = "tara"
     # Where synthesized .wav files are written.
