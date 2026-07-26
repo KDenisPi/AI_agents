@@ -87,7 +87,7 @@ class AiAgent:
         return self.model_text_to_voice.synthesize(text, path, voice)
 
     def summarize_current(
-        self, locations: list[str] | None = None, metrics: list[str] | None = None
+        self, locations: list[str] | None = None, metrics: list[str] = ['temperature', 'humidity'] | None = None
     ) -> str:
         """Ask model_small for a plain-language summary of get_current()."""
         current = self.storage.get_current(locations, metrics)
