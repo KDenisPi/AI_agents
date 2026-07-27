@@ -16,6 +16,7 @@ from pathlib import Path
 from Config import Config
 from OllamaClient import OllamaClient, session_id_for
 from ai_agent_storage import MetricStorage, format_current, format_history, format_stats
+from ai_server_graph import GraphError, MetricGrapher
 from text_to_voice import TextToVoice
 
 
@@ -38,7 +39,8 @@ class AiAgent:
     prompt_template_summarize_current = "Summarize these current sensor readings in a few plain sentences:\n"
     prompt_template_battery_status = "Summarize the battery status of these devices in a few plain sentences:\n"
     prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
-    promp_no_data = "No current data available."
+    prompt_template_history_outside_last_hours = "Summarize outside sensor readings for last hours in a few plain sentences:\n"
+    prompt_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
         """`session_id` resumes a named conversation, surviving process
@@ -79,6 +81,7 @@ class AiAgent:
             output_dir=config.voice_output_dir,
             retention_hours=config.voice_retention_hours,
         )
+        self._grapher = MetricGrapher(config.graph_output_dir, config.graph_retention_hours)
 
     def say(self, text: str, path: str | None = None, voice: str | None = None) -> Path:
         """Speak `text` into a .wav and return where it was written.
@@ -92,7 +95,7 @@ class AiAgent:
         """Ask model_small for a plain-language summary of get_current()."""
         current = self.storage.get_current(locations, metrics or ['temperature', 'humidity'])
         if not current:
-            return self.promp_no_data
+            return self.prompt_no_data
         prompt = (self.prompt_template_summarize_current + format_current(current))
         return self.model_small.chat_once(prompt)
 
@@ -100,9 +103,34 @@ class AiAgent:
         """Ask model_small for a plain-language summary of get_current()."""
         current = self.storage.get_current([], ['battery'])
         if not current:
-            return self.promp_no_data
+            return self.prompt_no_data
         prompt = (self.prompt_template_battery_status + format_current(current))
         return self.model_small.chat_once(prompt)
+
+    def summarize_history_outside_last_hours(
+        self, hours: int, metrics: list[str] | None = None, graph: bool = False
+    ) -> tuple[str, dict[str, Path]]:
+        """Ask model_small for a plain-language summary of
+        get_history_outside_last_hours(). Returns (summary, graphs) -
+        graphs is empty unless graph=True, in which case it holds one
+        rendered PNG per metric (ai_server_graph.plot_metrics(), reusing
+        the same history already fetched for the prompt rather than
+        querying again)."""
+        history = self.storage.get_history_outside_last_hours(
+            metrics or ['temperature', 'humidity'], hours
+        )
+        if not history:
+            return self.prompt_no_data, {}
+
+        graphs: dict[str, Path] = {}
+        if graph:
+            try:
+                graphs = self._grapher.plot_metrics(history)
+            except GraphError:
+                pass  # nothing to plot - the text summary still goes out
+
+        prompt = (self.prompt_template_history_outside_last_hours + format_history(history))
+        return self.model_small.chat_once(prompt), graphs
 
     def transalate_eng_ru(self, message: str) -> str:
         """Ask model_large for message translation from Eng to Russian."""
