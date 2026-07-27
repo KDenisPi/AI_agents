@@ -12,12 +12,21 @@ rest of the agent never writes SQL directly:
     get_history(metric, start, end, [locations]) -> raw readings per location
     get_history_last_hours(metric, hours, [locations]) -> get_history, last N hours
     get_history_last_days(metric, days, [locations])   -> get_history, last N days
+    get_history_outside_last_hours(metric, hours)      -> get_history_last_hours, outside only
+    get_history_outside_last_days(metric, days)        -> get_history_last_days, outside only
     today_outside()                            -> temperature+humidity, today
                                                    08:00-21:00 (or now), outside
                                                    locations only
 
+get_stats and get_history both take either one metric name or a list of
+them - pass a list to pull several metrics in a single query instead of one
+round trip per metric. A single name keeps the classic shape (keyed by
+location); a list nests one level deeper (location -> metric -> ...), same
+shape get_current() and today_outside() already use.
+
 format_current/format_stats/format_history render those results as compact
-text, meant to be dropped straight into an LLM prompt.
+text, meant to be dropped straight into an LLM prompt - each handles both
+the single- and multi-metric shape of the function it corresponds to.
 
 outside_locations/inside_locations are location names split by the
 location.outside flag, loaded lazily and cached; refresh_locations()
@@ -89,41 +98,48 @@ def format_current(result: dict[str, dict[str, MetricValue]]) -> str:
     return "\n".join(lines)
 
 
-def format_stats(result: dict[str, MetricStats]) -> str:
-    """Render get_stats()'s result as compact text for an LLM prompt."""
+def format_stats(result: dict[str, MetricStats] | dict[str, dict[str, MetricStats]]) -> str:
+    """Render get_stats()'s result as compact text for an LLM prompt -
+    either shape it can come back in, one metric (location -> MetricStats)
+    or several (location -> metric -> MetricStats)."""
     if not result:
         return "No stats data."
-    lines = [
-        f"{location}: {stats.metric} min={stats.min:g} max={stats.max:g} "
-        f"avg={stats.avg:.2f} (n={stats.count})"
-        for location, stats in result.items()
-    ]
+    lines = []
+    for location, value in result.items():
+        per_metric = value.values() if isinstance(value, dict) else [value]
+        parts = ", ".join(
+            f"{stats.metric} min={stats.min:g} max={stats.max:g} "
+            f"avg={stats.avg:.2f} (n={stats.count})"
+            for stats in per_metric
+        )
+        lines.append(f"{location}: {parts}")
     return "\n".join(lines)
 
 
-def format_history(result: dict[str, list[HistoryPoint]]) -> str:
-    """Render get_history()'s result as compact text for an LLM prompt."""
+def format_history(
+    result: dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]
+) -> str:
+    """Render get_history()'s result as compact text for an LLM prompt -
+    either shape it can come back in, one metric (location ->
+    list[HistoryPoint]) or several, same shape as today_outside()'s
+    (location -> metric -> list[HistoryPoint])."""
     if not result:
         return "No history data."
     lines = []
-    for location, points in result.items():
-        if not points:
-            continue
-        readings = ", ".join(f"{_fmt_dt(p.taken_at)}={p.value:g}" for p in points)
-        lines.append(f"{location}: {readings}")
-    return "\n".join(lines)
-
-
-def format_today_outside(result: dict[str, dict[str, list[HistoryPoint]]]) -> str:
-    """Render today_outside()'s result as compact text for an LLM prompt."""
-    lines = []
-    for location, metrics in result.items():
-        for metric, points in metrics.items():
+    for location, value in result.items():
+        per_metric = value.items() if isinstance(value, dict) else [(None, value)]
+        for metric, points in per_metric:
             if not points:
                 continue
             readings = ", ".join(f"{_fmt_dt(p.taken_at)}={p.value:g}" for p in points)
-            lines.append(f"{location} {metric}: {readings}")
-    return "\n".join(lines) if lines else "No data."
+            label = f"{location} {metric}" if metric else location
+            lines.append(f"{label}: {readings}")
+    return "\n".join(lines) if lines else "No history data."
+
+
+# today_outside() returns exactly get_history()'s multi-metric shape, so its
+# own formatter is just format_history under another name.
+format_today_outside = format_history
 
 
 class MetricStorage:
@@ -245,127 +261,156 @@ class MetricStorage:
         self._inside_locations = inside
 
     def get_stats(
-        self, metric: str, period: timedelta, locations: list[str] | None = None
-    ) -> dict[str, MetricStats]:
-        """Min/max/avg/count of `metric` over the last `period`, ending now,
-        keyed by location. Defaults to every location with data in that
-        window; pass `locations` to narrow it. A location with no readings
-        in the window is simply absent from the result."""
+        self, metric: str | list[str], period: timedelta, locations: list[str] | None = None
+    ) -> dict[str, MetricStats] | dict[str, dict[str, MetricStats]]:
+        """Min/max/avg/count over the last `period`, ending now. Pass a
+        single metric name for the classic shape, keyed by location; pass a
+        list to pull several metrics in one query instead of one round trip
+        each - the result is then keyed by location then metric, same shape
+        as get_current()'s. Defaults to every location with data in that
+        window; pass `locations` to narrow it. A location/metric with no
+        readings in the window is simply absent from the result."""
+        metrics = [metric] if isinstance(metric, str) else metric
         query = (
-            "SELECT l.location AS location, MIN(me.value) AS min, MAX(me.value) AS max, "
-            "AVG(me.value) AS avg, COUNT(*) AS count "
+            "SELECT l.location AS location, m.metric AS metric, MIN(me.value) AS min, "
+            "MAX(me.value) AS max, AVG(me.value) AS avg, COUNT(*) AS count "
             "FROM metering me "
             "JOIN metric m ON m.metricid = me.metric_metricid "
             "JOIN sensor s ON s.sensorid = me.sensor_sensorid "
             "JOIN location l ON l.locid = s.location_locid "
-            "WHERE m.metric = %s AND me.mdatatime >= %s"
+            "WHERE me.mdatatime >= %s"
         )
         since = datetime.now() - period
-        args: list = [metric, since]
+        args: list = [since]
+        placeholders = ", ".join(["%s"] * len(metrics))
+        query += f" AND m.metric IN ({placeholders})"
+        args.extend(metrics)
         if locations:
             placeholders = ", ".join(["%s"] * len(locations))
             query += f" AND l.location IN ({placeholders})"
             args.extend(locations)
-        query += " GROUP BY l.location"
+        query += " GROUP BY l.location, m.metric"
 
-        stats: dict[str, MetricStats] = {}
+        by_location: dict[str, dict[str, MetricStats]] = {}
         for row in self._query(query, tuple(args)):
             if not row["count"]:
                 continue
-            stats[row["location"]] = MetricStats(
-                metric=metric,
+            by_location.setdefault(row["location"], {})[row["metric"]] = MetricStats(
+                metric=row["metric"],
                 min=row["min"],
                 max=row["max"],
                 avg=row["avg"],
                 count=row["count"],
             )
-        return stats
+
+        if isinstance(metric, str):
+            return {
+                location: per_metric[metric]
+                for location, per_metric in by_location.items()
+                if metric in per_metric
+            }
+        return by_location
 
     def get_stats_last_hours(
-        self, metric: str, hours: int, locations: list[str] | None = None
-    ) -> dict[str, MetricStats]:
+        self, metric: str | list[str], hours: int, locations: list[str] | None = None
+    ) -> dict[str, MetricStats] | dict[str, dict[str, MetricStats]]:
         """get_stats over the last `hours`, ending now."""
         return self.get_stats(metric, timedelta(hours=hours), locations)
 
     def get_stats_last_days(
-        self, metric: str, days: int, locations: list[str] | None = None
-    ) -> dict[str, MetricStats]:
+        self, metric: str | list[str], days: int, locations: list[str] | None = None
+    ) -> dict[str, MetricStats] | dict[str, dict[str, MetricStats]]:
         """get_stats over the last `days`, ending now."""
         return self.get_stats(metric, timedelta(days=days), locations)
 
     def get_history(
         self,
-        metric: str,
+        metric: str | list[str],
         start: datetime,
         end: datetime,
         locations: list[str] | None = None,
-    ) -> dict[str, list[HistoryPoint]]:
-        """Every reading of `metric` between start and end (inclusive),
-        oldest first, keyed by location. Defaults to every location with
-        data in that window; pass `locations` to narrow it."""
+    ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
+        """Every reading between start and end (inclusive), oldest first.
+        Pass a single metric name for the classic shape, keyed by location;
+        pass a list to pull several metrics in one query instead of one
+        round trip each - the result is then keyed by location then metric,
+        same shape as get_current()'s. Defaults to every location with data
+        in that window; pass `locations` to narrow it."""
+        metrics = [metric] if isinstance(metric, str) else metric
         query = (
-            "SELECT l.location AS location, me.mdatatime AS taken_at, me.value AS value "
+            "SELECT l.location AS location, m.metric AS metric, me.mdatatime AS taken_at, "
+            "me.value AS value "
             "FROM metering me "
             "JOIN metric m ON m.metricid = me.metric_metricid "
             "JOIN sensor s ON s.sensorid = me.sensor_sensorid "
             "JOIN location l ON l.locid = s.location_locid "
-            "WHERE m.metric = %s AND me.mdatatime BETWEEN %s AND %s"
+            "WHERE me.mdatatime BETWEEN %s AND %s"
         )
-        args: list = [metric, start, end]
+        args: list = [start, end]
+        placeholders = ", ".join(["%s"] * len(metrics))
+        query += f" AND m.metric IN ({placeholders})"
+        args.extend(metrics)
         if locations:
             placeholders = ", ".join(["%s"] * len(locations))
             query += f" AND l.location IN ({placeholders})"
             args.extend(locations)
-        query += " ORDER BY l.location ASC, me.mdatatime ASC"
+        query += " ORDER BY l.location ASC, m.metric ASC, me.mdatatime ASC"
 
-        history: dict[str, list[HistoryPoint]] = {}
-        for row in self._query(query, tuple(args)):
-            history.setdefault(row["location"], []).append(
-                HistoryPoint(taken_at=row["taken_at"], value=row["value"])
-            )
-        return history
+        rows = self._query(query, tuple(args))
+        if isinstance(metric, str):
+            history: dict[str, list[HistoryPoint]] = {}
+            for row in rows:
+                history.setdefault(row["location"], []).append(
+                    HistoryPoint(taken_at=row["taken_at"], value=row["value"])
+                )
+            return history
+
+        history_multi: dict[str, dict[str, list[HistoryPoint]]] = {}
+        for row in rows:
+            history_multi.setdefault(row["location"], {}).setdefault(
+                row["metric"], []
+            ).append(HistoryPoint(taken_at=row["taken_at"], value=row["value"]))
+        return history_multi
 
     def get_history_last_hours(
-        self, metric: str, hours: int, locations: list[str] | None = None
-    ) -> dict[str, list[HistoryPoint]]:
+        self, metric: str | list[str], hours: int, locations: list[str] | None = None
+    ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
         """get_history over the last `hours`, ending now."""
         end = datetime.now()
         return self.get_history(metric, end - timedelta(hours=hours), end, locations)
 
-    def get_history_outside_last_hours(self, metric: str, hours: int) -> dict[str, list[HistoryPoint]]:
-        """get_history over the last `hours`, ending now."""
+    def get_history_outside_last_hours(
+        self, metric: str | list[str], hours: int
+    ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
+        """get_history over the last `hours`, ending now, outside_locations only."""
         end = datetime.now()
         return self.get_history(metric, end - timedelta(hours=hours), end, self.outside_locations)
 
     def get_history_last_days(
-        self, metric: str, days: int, locations: list[str] | None = None
-    ) -> dict[str, list[HistoryPoint]]:
+        self, metric: str | list[str], days: int, locations: list[str] | None = None
+    ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
         """get_history over the last `days`, ending now."""
         end = datetime.now()
         return self.get_history(metric, end - timedelta(days=days), end, locations)
 
-    def get_history_outside_last_days(self, metric: str, days: int) -> dict[str, list[HistoryPoint]]:
-        """get_history over the last `days`, ending now."""
+    def get_history_outside_last_days(
+        self, metric: str | list[str], days: int
+    ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
+        """get_history over the last `days`, ending now, outside_locations only."""
         end = datetime.now()
         return self.get_history(metric, end - timedelta(days=days), end, self.outside_locations)
 
     def today_outside(self) -> dict[str, dict[str, list[HistoryPoint]]]:
         """Temperature and humidity readings for today, from 08:00 up to
-        21:00 or now (whichever is earlier), from outside_locations only.
-        Keyed by location then metric - same shape as get_current()'s
-        result, but each value is the window's list of readings instead of
-        just the latest one. Before 08:00, the window is empty and every
-        location comes back with no readings."""
+        21:00 or now (whichever is earlier), from outside_locations only,
+        in one query. Keyed by location then metric - same shape as
+        get_current()'s result, but each value is the window's list of
+        readings instead of just the latest one. Before 08:00, the window
+        is empty and every location comes back with no readings."""
         now = datetime.now()
         start = now.replace(hour=8, minute=0, second=0, microsecond=0)
         end = min(now, now.replace(hour=21, minute=0, second=0, microsecond=0))
-        locations = self.outside_locations
-
-        today: dict[str, dict[str, list[HistoryPoint]]] = {}
-        for metric in ("temperature", "humidity"):
-            for location, points in self.get_history(metric, start, end, locations).items():
-                today.setdefault(location, {})[metric] = points
-        return today
+        return self.get_history(["temperature", "humidity"], start, end, self.outside_locations)
 
     def _query(self, query: str, args: tuple) -> list[dict]:
         # Held across execute and fetch, not just execute: the result set is

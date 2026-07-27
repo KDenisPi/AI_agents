@@ -7,15 +7,25 @@ MetricStorage's functions don't all return the same shape, so plot_metrics()
 is the one entry point: it sniffs which shape it was given and dispatches
 to the matching plot_* below.
 
-    get_current(...)   -> location -> metric -> MetricValue         plot_current: bar, one per metric
-    get_stats*(...)    -> location -> MetricStats                   plot_stats: bar (min/avg/max), one metric
-    today_outside()    -> location -> metric -> list[HistoryPoint]  one plot_history per metric
-    get_history*(...)  -> location -> list[HistoryPoint]            plot_history: line, needs metric= (see below)
+    get_stats*(metric, ...)         -> location -> MetricStats                  plot_stats: bar, one metric
+    get_stats*([metrics], ...)      -> location -> metric -> MetricStats        one plot_stats per metric
+    today_outside()                 -> location -> metric -> list[HistoryPoint] one plot_history per metric
+    get_history*([metrics], ...)    -> location -> metric -> list[HistoryPoint] one plot_history per metric
+    get_history*(metric, ...)       -> location -> list[HistoryPoint]           plot_history: line, needs metric= (see below)
 
-get_history()-shaped results don't carry a metric name - HistoryPoint has
-none, it's implied by whatever metric was passed to get_history() itself.
-Pass plot_metrics(data, metric="temperature") for those, or call
-plot_history() directly.
+get_stats()/get_history() take either one metric name or a list - pass a
+list to pull several metrics in a single query (see ai_agent_storage.py)
+and still get one graph per metric back from plot_metrics(). A single
+get_history()-shaped result doesn't carry a metric name of its own -
+HistoryPoint has none, it's implied by whatever metric was passed to
+get_history() itself. Pass plot_metrics(data, metric="temperature") for
+those, or call plot_history() directly.
+
+get_current()-shaped results (location -> metric -> MetricValue) are not
+supported: each location/metric only ever has one reading there, and a
+graph needs more than one value to plot. plot_metrics() raises GraphError
+for that shape - use format_current() and put the numbers in the prompt
+directly instead.
 
 Uses matplotlib's Agg backend throughout - this runs on a headless server,
 so there is never a display to render to.
@@ -177,31 +187,6 @@ class MetricGrapher:
         logger.info("plot_stats(%s): %d location(s) -> %s", metric, len(stats), out)
         return out
 
-    def plot_current(self, current: dict[str, dict[str, MetricValue]]) -> dict[str, Path]:
-        """One bar chart per metric (latest value per location), from a
-        get_current()-shaped result."""
-        by_metric: dict[str, dict[str, MetricValue]] = {}
-        for location, metrics in current.items():
-            for metric, value in metrics.items():
-                by_metric.setdefault(metric, {})[location] = value
-        if not by_metric:
-            raise GraphError("No data to plot")
-
-        paths: dict[str, Path] = {}
-        for metric, per_location in by_metric.items():
-            self.cleanup()
-            locations = sorted(per_location)
-            fig, ax = plt.subplots(figsize=(8, 4))
-            ax.bar(locations, [per_location[l].value for l in locations])
-            ax.set_xticks(range(len(locations)))
-            ax.set_xticklabels(locations, rotation=30, ha="right")
-            ax.set_title(metric)
-            ax.set_ylabel(metric)
-            ax.grid(True, axis="y", alpha=0.3)
-            paths[metric] = self._save(fig, metric, None)
-        logger.info("plot_current(): %d metric(s) -> %s", len(paths), list(paths))
-        return paths
-
     def plot_metrics(self, data: dict, metric: str | None = None) -> dict[str, Path]:
         """One entry point for any MetricStorage result: sniffs which of
         the shapes documented at the top of this module `data` is, and
@@ -224,9 +209,13 @@ class MetricGrapher:
         if isinstance(sample, dict):
             inner = next(iter(sample.values()), None)
             if inner is None or isinstance(inner, MetricValue):
-                return self.plot_current(data)
+                raise GraphError(
+                    "get_current()-shaped data has one reading per "
+                    "location/metric - nothing to graph"
+                )
             if isinstance(inner, list):
-                # today_outside()-shaped: location -> metric -> list[HistoryPoint]
+                # today_outside()/get_history([...])-shaped:
+                # location -> metric -> list[HistoryPoint]
                 by_metric: dict[str, dict[str, list[HistoryPoint]]] = {}
                 for location, metrics in data.items():
                     for m, points in metrics.items():
@@ -240,6 +229,13 @@ class MetricGrapher:
                 if not paths:
                     raise GraphError("No data to plot")
                 return paths
+            if isinstance(inner, MetricStats):
+                # get_stats([...])-shaped: location -> metric -> MetricStats
+                by_metric_stats: dict[str, dict[str, MetricStats]] = {}
+                for location, metrics in data.items():
+                    for m, stats in metrics.items():
+                        by_metric_stats.setdefault(m, {})[location] = stats
+                return {m: self.plot_stats(per_location) for m, per_location in by_metric_stats.items()}
 
         raise GraphError(f"Don't know how to plot {type(sample).__name__} values")
 
@@ -257,11 +253,8 @@ def demo():
         print("-- plot_metrics(today_outside()) --")
         print(grapher.plot_metrics(storage.today_outside()))
 
-        print("-- plot_metrics(get_current(metrics=['temperature', 'humidity'])) --")
-        print(grapher.plot_metrics(storage.get_current(metrics=["temperature", "humidity"])))
-
-        print("-- plot_metrics(get_stats_last_hours('temperature', 24)) --")
-        print(grapher.plot_metrics(storage.get_stats_last_hours("temperature", 24)))
+        print("-- plot_metrics(get_stats_last_hours(['temperature', 'humidity'], 24)) --")
+        print(grapher.plot_metrics(storage.get_stats_last_hours(["temperature", "humidity"], 24)))
 
         print("-- plot_metrics(get_history_last_hours('temperature', 24), metric='temperature') --")
         print(grapher.plot_metrics(storage.get_history_last_hours("temperature", 24), metric="temperature"))
