@@ -1,18 +1,22 @@
 """
 Stand-in for the real ai_client, until it exists - just enough to exercise
-ai_agent_server.py's accept-then-callback contract by hand: fires
-GET /api/current at the agent, and listens for the POST /api/response
-callback that follows, printing whatever comes back.
+ai_agent_server.py's accept-then-callback contract by hand: prints a
+numbered menu of the agent's endpoints, fires a GET for whichever one is
+picked, and listens for the POST /api/response callback that follows,
+printing whatever comes back.
 
 Run:
     python ai_client/simple_client.py
     python ai_client/simple_client.py --agent-url http://192.168.1.57:8100
     python ai_client/simple_client.py --voice          # spoken answer too
     python ai_client/simple_client.py --voice leo      # in a named voice
+    python ai_client/simple_client.py --graph          # rendered graphs too
 
 With --voice the callback carries an audio_url alongside the text - a link
 to a WAV on the agent, which is pruned after the agent's retention window,
-so fetch it rather than keeping the link.
+so fetch it rather than keeping the link. --graph does the same for a
+graphs field (one link per metric), and only applies to endpoints that
+support it.
 """
 
 import argparse
@@ -58,21 +62,45 @@ class CallbackHandler(BaseHTTPRequestHandler):
         pass  # quiet - the payload above is all we care about here
 
 
+def _get(agent_url: str, path: str, params: dict[str, str]) -> None:
+    query = "&".join(f"{k}={v}" if v else k for k, v in params.items())
+    try:
+        response = requests.get(f"{agent_url}{path}", params=params, timeout=5)
+        print(f">> GET {path}?{query} -> {response.status_code} {response.text}")
+    except requests.RequestException as e:
+        print(f">> GET {path}?{query} -> failed: {e}")
+
+
 def request_current(agent_url: str, voice: str | None = None) -> None:
-    request_id = make_request_id()
-    params = {"request_id": request_id}
+    params = {"request_id": make_request_id()}
     if voice is not None:
         # "" sends a bare "voice=", which the server reads the same as the
         # "&voice" flag its docstring documents: present, so speak the
         # answer, with no particular voice named.
         params["voice"] = voice
+    _get(agent_url, "/api/current", params)
 
-    query = "&".join(f"{k}={v}" if v else k for k, v in params.items())
-    try:
-        response = requests.get(f"{agent_url}/api/current", params=params, timeout=5)
-        print(f">> GET /api/current?{query} -> {response.status_code} {response.text}")
-    except requests.RequestException as e:
-        print(f">> GET /api/current?{query} -> failed: {e}")
+
+def request_outside_today(agent_url: str, graph: bool = False) -> None:
+    params = {"request_id": make_request_id()}
+    if graph:
+        params["graph"] = ""
+    _get(agent_url, "/api/outside_today", params)
+
+
+# Menu shown by main() - label plus the call it sends, in selection order.
+# Add a tuple here for any new ai_agent_server.py endpoint.
+def _menu(args: argparse.Namespace) -> list[tuple[str, callable]]:
+    return [
+        (
+            "Current summary (/api/current)",
+            lambda: request_current(args.agent_url, args.voice)
+        ),
+        (
+            "Outside today, 08:00-21:00 (/api/outside_today)",
+            lambda: request_outside_today(args.agent_url, args.graph),
+        ),
+    ]
 
 
 def main() -> None:
@@ -93,6 +121,11 @@ def main() -> None:
         metavar="NAME",
         help="also ask for a spoken answer; optionally name a voice, e.g. --voice leo",
     )
+    parser.add_argument(
+        "--graph",
+        action="store_true",
+        help="also ask for a rendered graph per metric, where the endpoint supports it",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
@@ -105,12 +138,27 @@ def main() -> None:
     if args.voice is not None:
         named = f" ({args.voice})" if args.voice else ""
         print(f"Asking for spoken answers{named} - audio_url will be in the callback")
-    print()
+    if args.graph:
+        print("Asking for graphs where supported - graphs will be in the callback")
+
+    options = _menu(args)
+
+    def print_menu() -> None:
+        print("\nChoose a request to send:")
+        for i, (label, _) in enumerate(options, start=1):
+            print(f"  {i}. {label}")
+        print("  q. quit")
 
     try:
         while True:
-            input("Press Enter to send GET /api/current (Ctrl+C to quit)... ")
-            request_current(args.agent_url, args.voice)
+            print_menu()
+            choice = input("> ").strip().lower()
+            if choice in ("q", "quit"):
+                break
+            if not choice.isdigit() or not (1 <= int(choice) <= len(options)):
+                print(f"Not a valid option - enter a number 1-{len(options)}, or q.")
+                continue
+            options[int(choice) - 1][1]()
     except (KeyboardInterrupt, EOFError):
         print("\nStopping")
     finally:

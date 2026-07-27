@@ -23,9 +23,17 @@ Client to AI_AGENT:
     text_to_voice.VOICES instead of config.ollama_voice. Synthesis roughly
     doubles the time to the callback.
 
+    GET /api/outside_today[?request_id=<id>][&graph]
+        Same 200/503/500 contract as /api/current. Summarizes today's
+        outside temperature+humidity (AiAgent.summarize_outside_for_today,
+        i.e. MetricStorage.today_outside() - 08:00-21:00 or now).
+
+        graph is a bare flag - "&graph" is enough - and asks for a PNG per
+        metric alongside the text.
+
 AI_AGENT to Client (config.ai_client_callback_url, always POST):
     POST /api/response
-        {"request_id": "<id or omitted>", "text": "...", "audio_url": null}
+        {"request_id": "<id or omitted>", "text": "...", "audio_url": null, "graphs": null}
         or, if the request failed after being accepted:
         {"request_id": "<id or omitted>", "error": "..."}
 
@@ -38,6 +46,13 @@ AI_AGENT to Client (config.ai_client_callback_url, always POST):
     audio_url null and the reason in an extra "audio_error" field: a
     spoken answer is a nice-to-have, and losing it is no reason to throw
     away an answer that already cost a model call.
+
+    graphs is null unless the request asked for one (only /api/outside_today
+    does today). When it did, it is {"<metric>": "<url>", ...} - one link
+    per metric, served from /graphs (see config.graph_output_dir), built
+    and pruned the same way audio_url is. {} means graph was requested but
+    there was nothing plottable (see ai_server_graph.GraphError) - the text
+    answer still went out.
 
 Every endpoint below follows this same accept-then-callback shape; see
 handle_current for the pattern to copy when adding another.
@@ -72,6 +87,8 @@ logger = logging.getLogger("ai-agent-server")
 
 # Where synthesized WAVs are served from, mounted on config.voice_output_dir.
 AUDIO_URL_PREFIX = "/audio"
+# Where rendered graphs are served from, mounted on config.graph_output_dir.
+GRAPH_URL_PREFIX = "/graphs"
 
 # asyncio.create_task() only holds a weak reference via the event loop - an
 # otherwise-unreferenced task can be garbage-collected mid-flight. Keeping a
@@ -110,6 +127,15 @@ def _audio_url(config: Config, path: Path, base_url: str) -> str:
     """
     base = (config.ai_agent_public_url or base_url).rstrip("/")
     return f"{base}{AUDIO_URL_PREFIX}/{quote(path.name)}"
+
+
+def _graph_urls(config: Config, paths: dict[str, Path], base_url: str) -> dict[str, str]:
+    """One absolute link per metric, same base-URL logic as _audio_url."""
+    base = (config.ai_agent_public_url or base_url).rstrip("/")
+    return {
+        metric: f"{base}{GRAPH_URL_PREFIX}/{quote(path.name)}"
+        for metric, path in paths.items()
+    }
 
 
 async def _post_callback(config: Config, payload: dict) -> None:
@@ -185,6 +211,53 @@ def make_app(config: Config) -> Starlette:
             payload["request_id"] = request_id
         await _post_callback(config, payload)
 
+    async def handle_outside_today(request: Request) -> Response:
+        request_id = request.query_params.get("request_id")
+        # Bare flag, same reasoning as "voice" above.
+        wants_graph = "graph" in request.query_params
+        try:
+            reachable = await asyncio.to_thread(_ollama_reachable, config)
+        except Exception as e:
+            logger.exception("Could not check Ollama availability")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        if not reachable:
+            return JSONResponse({"error": "model not available"}, status_code=503)
+
+        _spawn(
+            _run_outside_today(
+                config, request.app.state.agent, request_id, wants_graph, str(request.base_url)
+            )
+        )
+        body = {"accepted": True}
+        if request_id:
+            body["request_id"] = request_id
+        return JSONResponse(body, status_code=200)
+
+    async def _run_outside_today(
+        config: Config,
+        agent: AiAgent,
+        request_id: str | None,
+        wants_audio: bool,
+        voice: str | None,
+        wants_graph: bool,
+        base_url: str,
+    ) -> None:
+        try:
+            text, graphs = await asyncio.to_thread(
+                agent.summarize_outside_for_today, wants_graph
+            )
+            payload = {
+                "text": text,
+                "audio_url": None,
+                "graphs": _graph_urls(config, graphs, base_url) if wants_graph else None,
+            }
+        except Exception as e:
+            logger.exception("summarize_outside_for_today failed")
+            payload = {"error": str(e)}
+        if request_id:
+            payload["request_id"] = request_id
+        await _post_callback(config, payload)
+
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
         app.state.agent = AiAgent(config)
@@ -196,14 +269,21 @@ def make_app(config: Config) -> Starlette:
     # StaticFiles refuses to mount a directory that doesn't exist yet, and
     # routes are built before the agent (which would create it) exists.
     Path(config.voice_output_dir).mkdir(parents=True, exist_ok=True)
+    Path(config.graph_output_dir).mkdir(parents=True, exist_ok=True)
 
     return Starlette(
         routes=[
             Route("/api/current", handle_current, methods=["GET"]),
+            Route("/api/outside_today", handle_outside_today, methods=["GET"]),
             Mount(
                 AUDIO_URL_PREFIX,
                 StaticFiles(directory=config.voice_output_dir),
                 name="audio",
+            ),
+            Mount(
+                GRAPH_URL_PREFIX,
+                StaticFiles(directory=config.graph_output_dir),
+                name="graphs",
             ),
         ],
         lifespan=lifespan,

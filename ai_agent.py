@@ -135,12 +135,11 @@ class AiAgent:
 
     def summarize_outside_for_today(self, graph: bool = False) -> tuple[str, dict[str, Path]]:
         """Ask model_small for a plain-language summary of
-        get_history_outside_for_today(). Returns (summary, graphs) -
-        graphs is empty unless graph=True, in which case it holds one
-        rendered PNG per metric (ai_server_graph.plot_metrics(), reusing
-        the same history already fetched for the prompt rather than
-        querying again)."""
-        history = self.storage.get_history_outside_for_today()
+        today_outside(). Returns (summary, graphs) - graphs is empty
+        unless graph=True, in which case it holds one rendered PNG per
+        metric (ai_server_graph.plot_metrics(), reusing the same history
+        already fetched for the prompt rather than querying again)."""
+        history = self.storage.today_outside()
         if not history:
             return self.prompt_no_data, {}
 
