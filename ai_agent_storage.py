@@ -12,6 +12,9 @@ rest of the agent never writes SQL directly:
     get_history(metric, start, end, [locations]) -> raw readings per location
     get_history_last_hours(metric, hours, [locations]) -> get_history, last N hours
     get_history_last_days(metric, days, [locations])   -> get_history, last N days
+    today_outside()                            -> temperature+humidity, today
+                                                   08:00-21:00 (or now), outside
+                                                   locations only
 
 format_current/format_stats/format_history render those results as compact
 text, meant to be dropped straight into an LLM prompt.
@@ -109,6 +112,18 @@ def format_history(result: dict[str, list[HistoryPoint]]) -> str:
         readings = ", ".join(f"{_fmt_dt(p.taken_at)}={p.value:g}" for p in points)
         lines.append(f"{location}: {readings}")
     return "\n".join(lines)
+
+
+def format_today_outside(result: dict[str, dict[str, list[HistoryPoint]]]) -> str:
+    """Render today_outside()'s result as compact text for an LLM prompt."""
+    lines = []
+    for location, metrics in result.items():
+        for metric, points in metrics.items():
+            if not points:
+                continue
+            readings = ", ".join(f"{_fmt_dt(p.taken_at)}={p.value:g}" for p in points)
+            lines.append(f"{location} {metric}: {readings}")
+    return "\n".join(lines) if lines else "No data."
 
 
 class MetricStorage:
@@ -323,6 +338,24 @@ class MetricStorage:
         """get_history over the last `days`, ending now."""
         end = datetime.now()
         return self.get_history(metric, end - timedelta(days=days), end, locations)
+
+    def today_outside(self) -> dict[str, dict[str, list[HistoryPoint]]]:
+        """Temperature and humidity readings for today, from 08:00 up to
+        21:00 or now (whichever is earlier), from outside_locations only.
+        Keyed by location then metric - same shape as get_current()'s
+        result, but each value is the window's list of readings instead of
+        just the latest one. Before 08:00, the window is empty and every
+        location comes back with no readings."""
+        now = datetime.now()
+        start = now.replace(hour=8, minute=0, second=0, microsecond=0)
+        end = min(now, now.replace(hour=21, minute=0, second=0, microsecond=0))
+        locations = self.outside_locations
+
+        today: dict[str, dict[str, list[HistoryPoint]]] = {}
+        for metric in ("temperature", "humidity"):
+            for location, points in self.get_history(metric, start, end, locations).items():
+                today.setdefault(location, {})[metric] = points
+        return today
 
     def _query(self, query: str, args: tuple) -> list[dict]:
         # Held across execute and fetch, not just execute: the result set is
