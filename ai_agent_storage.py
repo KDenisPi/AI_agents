@@ -332,12 +332,22 @@ class MetricStorage:
         end = datetime.now()
         return self.get_history(metric, end - timedelta(hours=hours), end, locations)
 
+    def get_history_outside_last_hours(self, metric: str, hours: int) -> dict[str, list[HistoryPoint]]:
+        """get_history over the last `hours`, ending now."""
+        end = datetime.now()
+        return self.get_history(metric, end - timedelta(hours=hours), end, self.outside_locations)
+
     def get_history_last_days(
         self, metric: str, days: int, locations: list[str] | None = None
     ) -> dict[str, list[HistoryPoint]]:
         """get_history over the last `days`, ending now."""
         end = datetime.now()
         return self.get_history(metric, end - timedelta(days=days), end, locations)
+
+    def get_history_outside_last_days(self, metric: str, days: int) -> dict[str, list[HistoryPoint]]:
+        """get_history over the last `days`, ending now."""
+        end = datetime.now()
+        return self.get_history(metric, end - timedelta(days=days), end, self.outside_locations)
 
     def today_outside(self) -> dict[str, dict[str, list[HistoryPoint]]]:
         """Temperature and humidity readings for today, from 08:00 up to

@@ -12,6 +12,7 @@ vosk
 aiohttp
 pymysql
 python-dateutil
+matplotlib
 
 # Speech synthesis (text_to_voice.py). snac is the vocoder that turns the
 # model's audio tokens into samples; it pulls einops and huggingface-hub.

@@ -12,3 +12,4 @@ vosk
 aiohttp
 pymysql
 python-dateutil
+matplotlib

@@ -68,6 +68,13 @@ class Config:
     ollama_max_history_tokens: int = 3000
     ollama_keep_recent_messages: int = 10
 
+    # --- Metric graphs (ai_server_graph.py) ---
+    # Where rendered .png graphs are written.
+    graph_output_dir: str = "graph_output"
+    # How long those files are kept - same reasoning as voice_retention_hours.
+    # 0 keeps everything.
+    graph_retention_hours: int = 24
+
     # --- AI agent HTTP API (ai_agent_server.py) ---
     ai_agent_host: str = "0.0.0.0"
     ai_agent_port: int = 8100
@@ -182,6 +189,10 @@ class Config:
             ),
             ollama_keep_recent_messages=number(
                 "OLLAMA_KEEP_RECENT_MESSAGES", defaults.ollama_keep_recent_messages
+            ),
+            graph_output_dir=text("GRAPH_OUTPUT_DIR", defaults.graph_output_dir),
+            graph_retention_hours=number(
+                "GRAPH_RETENTION_HOURS", defaults.graph_retention_hours
             ),
             ai_agent_host=text("AI_AGENT_HOST", defaults.ai_agent_host),
             ai_agent_port=number("AI_AGENT_PORT", defaults.ai_agent_port),

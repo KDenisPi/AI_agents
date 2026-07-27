@@ -3,3 +3,4 @@ server.log
 .env
 db/weather_users.sql
 voice_output/
+graph_output/
