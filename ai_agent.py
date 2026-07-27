@@ -40,6 +40,7 @@ class AiAgent:
     prompt_template_battery_status = "Summarize the battery status of these devices in a few plain sentences:\n"
     prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
     prompt_template_history_outside_last_hours = "Summarize outside sensor readings for last hours in a few plain sentences:\n"
+    prompt_template_outside_for_today = "Summarize outside sensor readings for today in a few plain sentences:\n"
     prompt_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
@@ -132,6 +133,27 @@ class AiAgent:
         prompt = (self.prompt_template_history_outside_last_hours + format_history(history))
         return self.model_small.chat_once(prompt), graphs
 
+    def summarize_outside_for_today(self, graph: bool = False) -> tuple[str, dict[str, Path]]:
+        """Ask model_small for a plain-language summary of
+        get_history_outside_for_today(). Returns (summary, graphs) -
+        graphs is empty unless graph=True, in which case it holds one
+        rendered PNG per metric (ai_server_graph.plot_metrics(), reusing
+        the same history already fetched for the prompt rather than
+        querying again)."""
+        history = self.storage.get_history_outside_for_today()
+        if not history:
+            return self.prompt_no_data, {}
+
+        graphs: dict[str, Path] = {}
+        if graph:
+            try:
+                graphs = self._grapher.plot_metrics(history)
+            except GraphError:
+                pass  # nothing to plot - the text summary still goes out
+
+        prompt = (self.prompt_template_outside_for_today + format_history(history))
+        return self.model_small.chat_once(prompt), graphs
+
     def transalate_eng_ru(self, message: str) -> str:
         """Ask model_large for message translation from Eng to Russian."""
         prompt = (self.prompt_template_translate_en_ru + message)
@@ -169,11 +191,8 @@ def demo():
             msg = agent.summarize_current(metrics=['temperature', 'humidity'])
             print(msg)
             print("\n-- translate_eng_ru() --")
-            try:
-                msg_ru = agent.transalate_eng_ru(msg)
-                print(msg_ru)
-            except Exception as e:
-                print(f"  (model_large unreachable: {e})")
+            msg_ru = agent.transalate_eng_ru(msg)
+            print(msg_ru)
         except Exception as e:
             print(f"  (model_small unreachable: {e})")
 
@@ -181,12 +200,16 @@ def demo():
         try:
             msg = agent.summarize_current_battery()
             print(msg)
-            print("\n-- translate_eng_ru() --")
-            try:
-                msg_ru = agent.transalate_eng_ru(msg)
-                print(msg_ru)
-            except Exception as e:
-                print(f"  (model_large unreachable: {e})")
+            #print("\n-- translate_eng_ru() --")
+            #msg_ru = agent.transalate_eng_ru(msg)
+            #print(msg_ru)
+        except Exception as e:
+            print(f"  (model_small unreachable: {e})")
+
+        print("\n-- summarize_outside_for_today() --")
+        try:
+            msg = agent.summarize_outside_for_today(graph=True)
+            print(msg)
         except Exception as e:
             print(f"  (model_small unreachable: {e})")
 
