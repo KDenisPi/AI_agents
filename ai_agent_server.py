@@ -23,10 +23,11 @@ Client to AI_AGENT:
     text_to_voice.VOICES instead of config.ollama_voice. Synthesis roughly
     doubles the time to the callback.
 
-    GET /api/outside_today[?request_id=<id>][&graph]
+    GET /api/outside_today[?request_id=<id>][&voice[=<name>]][&graph]
         Same 200/503/500 contract as /api/current. Summarizes today's
         outside temperature+humidity (AiAgent.summarize_outside_for_today,
-        i.e. MetricStorage.today_outside() - 08:00-21:00 or now).
+        i.e. MetricStorage.today_outside() - 08:00-21:00 or now). voice
+        works exactly as it does on /api/current.
 
         graph is a bare flag - "&graph" is enough - and asks for a PNG per
         metric alongside the text.
@@ -138,6 +139,20 @@ def _graph_urls(config: Config, paths: dict[str, Path], base_url: str) -> dict[s
     }
 
 
+async def _add_audio(
+    config: Config, agent: AiAgent, payload: dict, text: str, voice: str | None, base_url: str
+) -> None:
+    """Synthesize `text` and add its audio_url to `payload` in place. On
+    failure, adds audio_error instead - the text answer has already cost a
+    model call, so a synthesis failure must not lose it."""
+    try:
+        path = await asyncio.to_thread(agent.say, text, voice=voice)
+        payload["audio_url"] = _audio_url(config, path, base_url)
+    except Exception as e:
+        logger.exception("Speech synthesis failed")
+        payload["audio_error"] = str(e)
+
+
 async def _post_callback(config: Config, payload: dict) -> None:
     try:
         await asyncio.to_thread(
@@ -199,21 +214,16 @@ def make_app(config: Config) -> Starlette:
             payload = {"error": str(e)}
         else:
             if wants_audio:
-                try:
-                    path = await asyncio.to_thread(agent.say, text, voice=voice)
-                    payload["audio_url"] = _audio_url(config, path, base_url)
-                except Exception as e:
-                    # The text answer has already cost a model call - send it
-                    # rather than lose it to a failed nice-to-have.
-                    logger.exception("Speech synthesis failed")
-                    payload["audio_error"] = str(e)
+                await _add_audio(config, agent, payload, text, voice, base_url)
         if request_id:
             payload["request_id"] = request_id
         await _post_callback(config, payload)
 
     async def handle_outside_today(request: Request) -> Response:
         request_id = request.query_params.get("request_id")
-        # Bare flag, same reasoning as "voice" above.
+        # Same reasoning as handle_current above.
+        wants_audio = "voice" in request.query_params
+        voice = request.query_params.get("voice") or None
         wants_graph = "graph" in request.query_params
         try:
             reachable = await asyncio.to_thread(_ollama_reachable, config)
@@ -225,7 +235,15 @@ def make_app(config: Config) -> Starlette:
 
         _spawn(
             _run_outside_today(
-                config, request.app.state.agent, request_id, wants_graph, str(request.base_url)
+                config,
+                request.app.state.agent,
+                request_id,
+                wants_audio,
+                voice,
+                wants_graph,
+                # Captured here because the callback is built long after the
+                # request object is gone.
+                str(request.base_url),
             )
         )
         body = {"accepted": True}
@@ -254,6 +272,9 @@ def make_app(config: Config) -> Starlette:
         except Exception as e:
             logger.exception("summarize_outside_for_today failed")
             payload = {"error": str(e)}
+        else:
+            if wants_audio:
+                await _add_audio(config, agent, payload, text, voice, base_url)
         if request_id:
             payload["request_id"] = request_id
         await _post_callback(config, payload)
