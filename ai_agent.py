@@ -36,12 +36,12 @@ class AiAgent:
         # left off, instead of starting fresh each process:
         agent = AiAgent(config, session_id="kitchen")
     """
-    prompt_template_summarize_current = "Summarize these current sensor readings in 2-3 short sentences total:\n"
+    prompt_template_summarize_current = "Summarize these current sensor readings in 2-3 short sentences total. No notes or closing remarks. \n"
 
     prompt_template_battery_status = "Summarize battery status of these devices. List only devices below 50% as " \
         "'DeviceName: NN%'. If none are below 50%, respond with just " \
         "'Battery levels for all devices are normal.' Do not mention devices at or above 50% individually.\n"
-    
+
     prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
     prompt_template_history_outside_last_hours = "Summarize outside sensor readings for last hours in a few plain sentences:\n"
     prompt_template_outside_for_today = "Summarize outside sensor readings for today in 2-3 short sentences total. \
