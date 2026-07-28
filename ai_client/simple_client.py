@@ -16,7 +16,9 @@ With --voice the callback carries an audio_url alongside the text - a link
 to a WAV on the agent, which is pruned after the agent's retention window,
 so fetch it rather than keeping the link. --graph does the same for a
 graphs field (one link per metric), and only applies to endpoints that
-support it.
+support it. Both are fetched automatically as each callback arrives and
+saved to ~/Downloads - the agent's retention window is short enough that
+waiting to fetch them by hand risks losing the file.
 """
 
 import argparse
@@ -26,8 +28,12 @@ import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 import requests
+
+DOWNLOADS_DIR = Path.home() / "Downloads"
 
 logger = logging.getLogger("ai-client")
 
@@ -55,11 +61,32 @@ class CallbackHandler(BaseHTTPRequestHandler):
             payload = {"raw": body.decode(errors="replace")}
         print(f"\n<< POST /api/response: {json.dumps(payload, indent=2)}")
 
+        audio_url = payload.get("audio_url")
+        if audio_url:
+            _download(audio_url)
+        for url in (payload.get("graphs") or {}).values():
+            _download(url)
+
         self.send_response(200)
         self.end_headers()
 
     def log_message(self, format, *args):
         pass  # quiet - the payload above is all we care about here
+
+
+def _download(url: str) -> None:
+    """Fetch `url` into DOWNLOADS_DIR under its own filename - both audio_url
+    and graphs links are already unique timestamped names (text_to_voice.py,
+    ai_server_graph.py), so no renaming is needed here."""
+    dest = DOWNLOADS_DIR / unquote(Path(urlparse(url).path).name)
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+        DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(response.content)
+        print(f"   downloaded {dest}")
+    except requests.RequestException as e:
+        print(f"   failed to download {url}: {e}")
 
 
 def _get(agent_url: str, path: str, params: dict[str, str]) -> None:
@@ -137,6 +164,7 @@ def main() -> None:
     thread.start()
     print(f"Listening for callbacks on http://{args.host}:{args.port}/api/response")
     print(f"Sending requests to {args.agent_url}")
+    print(f"Audio/graph files in callbacks are saved to {DOWNLOADS_DIR}")
     if args.voice is not None:
         named = f" ({args.voice})" if args.voice else ""
         print(f"Asking for spoken answers{named} - audio_url will be in the callback")
