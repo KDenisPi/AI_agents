@@ -94,6 +94,12 @@ class Config:
     # --- Scheduling ---
     interval_seconds: int = 600
 
+    # IANA zone name used only to decide what "today" means (today_outside()'s
+    # 08:00-21:00 window) - metering.mdatatime stays UTC, as collected (see
+    # Collector._tick_timestamp). Needed because the process computing "today"
+    # may itself be running in a container with no local timezone, e.g. UTC.
+    local_timezone: str = "America/Los_Angeles"
+
     # When True, collect from HTTP/MCP as usual but write nothing - the
     # prepared SQL INSERTs are logged instead. Overridden by --dry-run.
     dry_run: bool = False
@@ -204,6 +210,7 @@ class Config:
             ),
             ai_agent_public_url=text("AI_AGENT_PUBLIC_URL", defaults.ai_agent_public_url),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
+            local_timezone=text("LOCAL_TIMEZONE", defaults.local_timezone),
             dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),
             default_location_name=text("DEFAULT_LOCATION_NAME", defaults.default_location_name),

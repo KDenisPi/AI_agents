@@ -42,7 +42,8 @@ serialised internally.
 import logging
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import pymysql
 
@@ -406,10 +407,22 @@ class MetricStorage:
         in one query. Keyed by location then metric - same shape as
         get_current()'s result, but each value is the window's list of
         readings instead of just the latest one. Before 08:00, the window
-        is empty and every location comes back with no readings."""
-        now = datetime.now()
-        start = now.replace(hour=8, minute=0, second=0, microsecond=0)
-        end = min(now, now.replace(hour=21, minute=0, second=0, microsecond=0))
+        is empty and every location comes back with no readings.
+
+        "Today" and 08:00/21:00 are anchored to config.local_timezone, not
+        this process's own clock - mdatatime is stored in UTC (see
+        Collector._tick_timestamp) regardless of what timezone the
+        collecting or querying process happens to be running in (e.g. a
+        container defaulting to UTC), so the boundaries are computed in
+        local wall-clock time and converted to UTC before hitting the
+        query, rather than comparing UTC rows against a local-looking but
+        actually-UTC now()."""
+        tz = ZoneInfo(self._config.local_timezone)
+        now_local = datetime.now(tz)
+        start_local = now_local.replace(hour=8, minute=0, second=0, microsecond=0)
+        end_local = min(now_local, now_local.replace(hour=21, minute=0, second=0, microsecond=0))
+        start = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+        end = end_local.astimezone(timezone.utc).replace(tzinfo=None)
         return self.get_history(["temperature", "humidity"], start, end, self.outside_locations)
 
     def _query(self, query: str, args: tuple) -> list[dict]:
