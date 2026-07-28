@@ -130,7 +130,7 @@ def _menu(args: argparse.Namespace) -> list[tuple[str, callable]]:
     return [
         (
             "Current summary (/api/current)",
-            lambda: request_current(args.agent_url, args.voice)
+            lambda: request_current(args.agent_url, args.voice),
         ),
         (
             "Outside today, 08:00-21:00 (/api/outside_today)",
