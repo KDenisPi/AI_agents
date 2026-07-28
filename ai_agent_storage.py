@@ -413,6 +413,7 @@ class MetricStorage:
         return self.get_history(["temperature", "humidity"], start, end, self.outside_locations)
 
     def _query(self, query: str, args: tuple) -> list[dict]:
+        logger.info("Query: %s | args=%s", query, args)
         # Held across execute and fetch, not just execute: the result set is
         # read off the same socket, so releasing early would let another
         # thread's query overwrite the bytes this one is still reading.
