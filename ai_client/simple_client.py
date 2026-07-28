@@ -108,6 +108,13 @@ def request_current(agent_url: str, voice: str | None = None) -> None:
     _get(agent_url, "/api/current", params)
 
 
+def request_current_battery(agent_url: str, voice: str | None = None) -> None:
+    params = {"request_id": make_request_id()}
+    if voice is not None:
+        params["voice"] = voice
+    _get(agent_url, "/api/current_battery", params)
+
+
 def request_outside_today(agent_url: str, voice: str | None = None, graph: bool = False) -> None:
     params = {"request_id": make_request_id()}
     if voice is not None:
@@ -128,6 +135,10 @@ def _menu(args: argparse.Namespace) -> list[tuple[str, callable]]:
         (
             "Outside today, 08:00-21:00 (/api/outside_today)",
             lambda: request_outside_today(args.agent_url, args.voice, args.graph),
+        ),
+        (
+            "Current battery status (/api/current_battery)",
+            lambda: request_current_battery(args.agent_url, args.voice),
         ),
     ]
 
