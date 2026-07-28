@@ -197,7 +197,7 @@ class MetricStorage:
         the same metric, the most recent wins."""
         query = (
             "SELECT l.location AS location, m.metric AS metric, me.value AS value, "
-            "me.mdatatime AS taken_at, s.name AS sensor_name "
+            "CONVERT_TZ(me.mdatatime, 'UTC', %s) AS taken_at, s.name AS sensor_name "
             "FROM metering me "
             "JOIN metric m ON m.metricid = me.metric_metricid "
             "JOIN sensor s ON s.sensorid = me.sensor_sensorid "
@@ -209,7 +209,11 @@ class MetricStorage:
             "  AND me2.metric_metricid = me.metric_metricid"
             ")"
         )
-        args: list = []
+        # mdatatime is stored UTC (see Collector._tick_timestamp) - convert
+        # it to local_timezone for display right in the SELECT, so taken_at
+        # already reads as local wall-clock everywhere it's used (prompts,
+        # graphs) without every caller having to know or convert.
+        args: list = [self._config.local_timezone]
         if locations:
             placeholders = ", ".join(["%s"] * len(locations))
             query += f" AND l.location IN ({placeholders})"
@@ -339,7 +343,8 @@ class MetricStorage:
         in that window; pass `locations` to narrow it."""
         metrics = [metric] if isinstance(metric, str) else metric
         query = (
-            "SELECT l.location AS location, m.metric AS metric, me.mdatatime AS taken_at, "
+            "SELECT l.location AS location, m.metric AS metric, "
+            "CONVERT_TZ(me.mdatatime, 'UTC', %s) AS taken_at, "
             "me.value AS value "
             "FROM metering me "
             "JOIN metric m ON m.metricid = me.metric_metricid "
@@ -347,7 +352,9 @@ class MetricStorage:
             "JOIN location l ON l.locid = s.location_locid "
             "WHERE me.mdatatime BETWEEN %s AND %s"
         )
-        args: list = [start, end]
+        # start/end are compared against stored UTC mdatatime as-is - only
+        # the displayed taken_at is converted, via local_timezone above.
+        args: list = [self._config.local_timezone, start, end]
         placeholders = ", ".join(["%s"] * len(metrics))
         query += f" AND m.metric IN ({placeholders})"
         args.extend(metrics)
