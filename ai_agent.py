@@ -40,7 +40,8 @@ class AiAgent:
     prompt_template_battery_status = "Summarize the battery status of these devices in a few plain sentences:\n"
     prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
     prompt_template_history_outside_last_hours = "Summarize outside sensor readings for last hours in a few plain sentences:\n"
-    prompt_template_outside_for_today = "Summarize outside sensor readings for today in a few plain sentences:\n"
+    prompt_template_outside_for_today = "Summarize outside sensor readings for today in 2-3 short sentences total. \
+	Temperature: one sentence with range and peak only (provide time when it happened). Humidity: one short clause with just the range, no trend detail. No notes or closing remarks.:\n"
     prompt_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
