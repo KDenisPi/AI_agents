@@ -23,6 +23,11 @@ Client to AI_AGENT:
     text_to_voice.VOICES instead of config.ollama_voice. Synthesis roughly
     doubles the time to the callback.
 
+    GET /api/current_battery[?request_id=<id>][&voice[=<name>]]
+        Same 200/503/500 contract as /api/current. Summarizes battery
+        levels (AiAgent.summarize_current_battery). voice works exactly
+        as it does on /api/current.
+
     GET /api/outside_today[?request_id=<id>][&voice[=<name>]][&graph]
         Same 200/503/500 contract as /api/current. Summarizes today's
         outside temperature+humidity (AiAgent.summarize_outside_for_today,
@@ -219,6 +224,57 @@ def make_app(config: Config) -> Starlette:
             payload["request_id"] = request_id
         await _post_callback(config, payload)
 
+    async def handle_current_battery(request: Request) -> Response:
+        request_id = request.query_params.get("request_id")
+        # Same reasoning as handle_current above.
+        wants_audio = "voice" in request.query_params
+        voice = request.query_params.get("voice") or None
+        try:
+            reachable = await asyncio.to_thread(_ollama_reachable, config)
+        except Exception as e:
+            logger.exception("Could not check Ollama availability")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        if not reachable:
+            return JSONResponse({"error": "model not available"}, status_code=503)
+
+        _spawn(
+            _run_current_battery(
+                config,
+                request.app.state.agent,
+                request_id,
+                wants_audio,
+                voice,
+                # Captured here because the callback is built long after the
+                # request object is gone.
+                str(request.base_url),
+            )
+        )
+        body = {"accepted": True}
+        if request_id:
+            body["request_id"] = request_id
+        return JSONResponse(body, status_code=200)
+
+    async def _run_current_battery(
+        config: Config,
+        agent: AiAgent,
+        request_id: str | None,
+        wants_audio: bool,
+        voice: str | None,
+        base_url: str,
+    ) -> None:
+        try:
+            text = await asyncio.to_thread(agent.summarize_current_battery)
+            payload = {"text": text, "audio_url": None}
+        except Exception as e:
+            logger.exception("summarize_current_battery failed")
+            payload = {"error": str(e)}
+        else:
+            if wants_audio:
+                await _add_audio(config, agent, payload, text, voice, base_url)
+        if request_id:
+            payload["request_id"] = request_id
+        await _post_callback(config, payload)
+
     async def handle_outside_today(request: Request) -> Response:
         request_id = request.query_params.get("request_id")
         # Same reasoning as handle_current above.
@@ -295,6 +351,7 @@ def make_app(config: Config) -> Starlette:
     return Starlette(
         routes=[
             Route("/api/current", handle_current, methods=["GET"]),
+            Route("/api/current_battery", handle_current_battery, methods=["GET"]),
             Route("/api/outside_today", handle_outside_today, methods=["GET"]),
             Mount(
                 AUDIO_URL_PREFIX,
