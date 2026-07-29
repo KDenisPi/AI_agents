@@ -44,7 +44,7 @@ class AiAgent:
     # verbatim. So the prompt only covers the listing case, which is all the
     # model is ever asked to do here.
     battery_low_threshold = 50
-    prompt_battery_all_normal = "All batteries up. No need any maintenance"
+    prompt_battery_all_normal = "Battery levels for all devices are normal."
     prompt_template_battery_status = "Report battery status of these devices. Output only the answer itself - " \
         "no preamble, reasoning, or explanation. List only devices below 50% as " \
         "'DeviceName: NN%'. Do not mention devices at or above 50% individually.\n"
