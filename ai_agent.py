@@ -40,7 +40,7 @@ class AiAgent:
 
     prompt_template_battery_status = "Summarize battery status of these devices. List only devices below 50% as " \
         "'DeviceName: NN%'. If none are below 50%, respond with just " \
-        "'Battery levels for all devices are normal.' Do not mention devices at or above 50% individually.\n"
+        "'All batteries up. No need any maintenance' Do not mention devices at or above 50% individually.\n"
 
     prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
     prompt_template_history_outside_last_hours = "Summarize outside sensor readings for last hours in a few plain sentences:\n"
