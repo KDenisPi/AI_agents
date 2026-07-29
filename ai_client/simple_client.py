@@ -11,6 +11,7 @@ Run:
     python ai_client/simple_client.py --voice          # spoken answer too
     python ai_client/simple_client.py --voice leo      # in a named voice
     python ai_client/simple_client.py --graph          # rendered graphs too
+    python ai_client/simple_client.py --hours 48       # span for outside_last_hours
 
 With --voice the callback carries an audio_url alongside the text - a link
 to a WAV on the agent, which is pruned after the agent's retention window,
@@ -124,6 +125,15 @@ def request_outside_today(agent_url: str, voice: str | None = None, graph: bool 
     _get(agent_url, "/api/outside_today", params)
 
 
+def request_outside_last_hours(agent_url: str, hours: int = 24, graph: bool = False) -> None:
+    # No voice on this endpoint (see ai_agent_server.py) - graphs only, so
+    # --voice is deliberately not forwarded here.
+    params = {"request_id": make_request_id(), "hours": str(hours)}
+    if graph:
+        params["graph"] = ""
+    _get(agent_url, "/api/outside_last_hours", params)
+
+
 # Menu shown by main() - label plus the call it sends, in selection order.
 # Add a tuple here for any new ai_agent_server.py endpoint.
 def _menu(args: argparse.Namespace) -> list[tuple[str, callable]]:
@@ -135,6 +145,10 @@ def _menu(args: argparse.Namespace) -> list[tuple[str, callable]]:
         (
             "Outside today, 08:00-21:00 (/api/outside_today)",
             lambda: request_outside_today(args.agent_url, args.voice, args.graph),
+        ),
+        (
+            f"Outside, last {args.hours}h (/api/outside_last_hours)",
+            lambda: request_outside_last_hours(args.agent_url, args.hours, args.graph),
         ),
         (
             "Current battery status (/api/current_battery)",
@@ -165,6 +179,12 @@ def main() -> None:
         "--graph",
         action="store_true",
         help="also ask for a rendered graph per metric, where the endpoint supports it",
+    )
+    parser.add_argument(
+        "--hours",
+        type=int,
+        default=24,
+        help="span for /api/outside_last_hours (default 24)",
     )
     args = parser.parse_args()
 

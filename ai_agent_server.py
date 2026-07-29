@@ -37,6 +37,15 @@ Client to AI_AGENT:
         graph is a bare flag - "&graph" is enough - and asks for a PNG per
         metric alongside the text.
 
+    GET /api/outside_last_hours[?request_id=<id>][&hours=<n>][&graph]
+        Same 200/503/500 contract as /api/current, plus 400 if hours is
+        given but not a positive integer. Summarizes the last <hours> of
+        outside temperature+humidity
+        (AiAgent.summarize_history_outside_last_hours, i.e.
+        MetricStorage.get_history_outside_last_hours). hours defaults to 24.
+        Graphs only, no voice - graph works exactly as it does on
+        /api/outside_today; there is no voice flag on this endpoint.
+
 AI_AGENT to Client (config.ai_client_callback_url, always POST):
     POST /api/response
         {"request_id": "<id or omitted>", "text": "...", "audio_url": null, "graphs": null}
@@ -54,7 +63,8 @@ AI_AGENT to Client (config.ai_client_callback_url, always POST):
     away an answer that already cost a model call.
 
     graphs is null unless the request asked for one (only /api/outside_today
-    does today). When it did, it is {"<metric>": "<url>", ...} - one link
+    and /api/outside_last_hours do today). When it did, it is
+    {"<metric>": "<url>", ...} - one link
     per metric, served from /graphs (see config.graph_output_dir), built
     and pruned the same way audio_url is. {} means graph was requested but
     there was nothing plottable (see ai_server_graph.GraphError) - the text
@@ -335,6 +345,71 @@ def make_app(config: Config) -> Starlette:
             payload["request_id"] = request_id
         await _post_callback(config, payload)
 
+    async def handle_outside_last_hours(request: Request) -> Response:
+        request_id = request.query_params.get("request_id")
+        wants_graph = "graph" in request.query_params
+        # hours is optional and defaults to 24. Reject a non-integer or
+        # non-positive value up front rather than silently summarizing the
+        # wrong span - this is the only endpoint that can 400.
+        hours_param = request.query_params.get("hours")
+        if hours_param is None:
+            hours = 24
+        else:
+            try:
+                hours = int(hours_param)
+            except ValueError:
+                return JSONResponse({"error": "hours must be an integer"}, status_code=400)
+            if hours <= 0:
+                return JSONResponse({"error": "hours must be positive"}, status_code=400)
+        try:
+            reachable = await asyncio.to_thread(_ollama_reachable, config)
+        except Exception as e:
+            logger.exception("Could not check Ollama availability")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        if not reachable:
+            return JSONResponse({"error": "model not available"}, status_code=503)
+
+        _spawn(
+            _run_outside_last_hours(
+                config,
+                request.app.state.agent,
+                request_id,
+                hours,
+                wants_graph,
+                # Captured here because the callback is built long after the
+                # request object is gone.
+                str(request.base_url),
+            )
+        )
+        body = {"accepted": True}
+        if request_id:
+            body["request_id"] = request_id
+        return JSONResponse(body, status_code=200)
+
+    async def _run_outside_last_hours(
+        config: Config,
+        agent: AiAgent,
+        request_id: str | None,
+        hours: int,
+        wants_graph: bool,
+        base_url: str,
+    ) -> None:
+        try:
+            text, graphs = await asyncio.to_thread(
+                agent.summarize_history_outside_last_hours, hours, None, wants_graph
+            )
+            payload = {
+                "text": text,
+                "audio_url": None,
+                "graphs": _graph_urls(config, graphs, base_url) if wants_graph else None,
+            }
+        except Exception as e:
+            logger.exception("summarize_history_outside_last_hours failed")
+            payload = {"error": str(e)}
+        if request_id:
+            payload["request_id"] = request_id
+        await _post_callback(config, payload)
+
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
         app.state.agent = AiAgent(config)
@@ -353,6 +428,7 @@ def make_app(config: Config) -> Starlette:
             Route("/api/current", handle_current, methods=["GET"]),
             Route("/api/current_battery", handle_current_battery, methods=["GET"]),
             Route("/api/outside_today", handle_outside_today, methods=["GET"]),
+            Route("/api/outside_last_hours", handle_outside_last_hours, methods=["GET"]),
             Mount(
                 AUDIO_URL_PREFIX,
                 StaticFiles(directory=config.voice_output_dir),
