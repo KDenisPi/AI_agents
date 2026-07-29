@@ -1,6 +1,9 @@
 """
-AI agent - ties the storage layer (ai_agent_storage.py) to the Ollama
-models built from Config's Ollama settings.
+AI agent - ties the storage layer (ai_agent_storage.py) to the chat models
+built from Config's Ollama settings. model_small/model_large go through
+OllamaClient, which speaks the OpenAI-compatible /v1/chat/completions API
+and so can point at Ollama or a llama.cpp server; model_text_to_voice
+still talks to Ollama specifically (see text_to_voice.py).
 
 AiAgent exposes model_small (cheap/frequent calls), model_large (anything
 needing more reasoning) and model_text_to_voice (speech synthesis), plus
@@ -22,7 +25,7 @@ from text_to_voice import TextToVoice
 
 class AiAgent:
     """
-    Ties the storage layer to two Ollama models on the same host - a small
+    Ties the storage layer to two chat models on the same host - a small
     one for cheap/frequent calls, a large one for anything that needs more
     reasoning.
 
