@@ -2,3 +2,11 @@ docker buildx build --tag python3.11:tf_agents -f ./Dockerfile .
 
 docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name mcp-server -p 8000:8000 ai-agent:latest python -u McpMultiHttpServer.py
 docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name data-collector ai-agent:latest python -u Collector.py
+
+docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -w /app --name ai-server -it -p 8100:8100 ai-server-gpu:latest python -u ai_agent_server.py
+
+docker kill --signal=<SIGNAL> <container_name_or_id>
+
+#CTRL+C
+docker kill --signal=SIGINT <container_name_or_id>
+
