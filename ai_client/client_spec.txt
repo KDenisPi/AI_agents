@@ -4,7 +4,7 @@ We will need to create a real client with Web based interface that will allow to
 The real device will be based on Rapberry Pi with 1024x768 touch screen.
 Interface should allow to initiate requests without parameters (current state, battery status) and parameterized requests (for last xxx hours, from date to date).
 Also need to made possibility to switch On/Off additional audio and/or graph (it will be used with requests that support it).
-When we got initial 200 OK from server that reqiest received for processing need to how message "Thinking..." and probably time counter (not necessary).
+When we got initial 200 OK from server that reqiest received for processing need to how message "Thinking..." and time counter.
 We should not allow to initiate another request untill the current will noi be finished.
 
 If there are text only (voice Off, graph Off) - Just put returned text on the screen.
@@ -17,6 +17,7 @@ These URLs are served by ai_agent_server itself (no separate file host). Audio f
 
 Error and timeout handling:
 - If the server returns a non-200 status, or a connection error/timeout occurs while waiting for the response, the client must show a visible error state (not remain stuck on "Thinking...") and unlock the UI so a new request can be initiated.
+- The error message and error code are displayed in the answer text area (same location normal responses use), rather than a separate error UI.
 - The client enforces its own timeout on a pending request (in addition to whatever the server-side processing time is), so a hung server call cannot lock the touchscreen indefinitely.
 - The "Thinking..." state includes an elapsed time counter (promoted from optional to required), giving the user a visual cue for how long a request has been pending and a basis for the client-side timeout.
 
@@ -30,6 +31,7 @@ Left sidebar (224 wide, full height below header):
 - Requests section: two always-visible buttons for parameterless requests, "Current state" and "Battery status".
 - Time range section: a "Last hours" button paired with a combo box offering 1-48 hours in 1-hour increments (default 12); a "Run range query" button; a "From date" picker (default: 7 days ago) and a "To date" picker (default: today), placed below the button.
 - Output section: "Audio" and "Graph" as on/off toggle switches (not buttons), so state is visible at a glance without reading text.
+- Metric selector (shown only when the response includes more than one graph, i.e. more than one PNG): a menu listing the metric names from the response (e.g. "Temperature", "Humidity"), in whatever order the server returns them. Selecting an item shows that metric's PNG in the graph area. The graph area initially shows the first metric in that same server-returned order. Hidden entirely when the response has zero or one graph.
 - Answer text section: a label ("Answer text") that also functions as the processing-status indicator — shows "Thinking... m:ss" with an elapsed timer while a request is pending, and reverts to idle once a response arrives. This is a label/status only; the actual answer content is not shown here.
 
 Main content area (800 wide, right of sidebar):
