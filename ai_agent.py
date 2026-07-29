@@ -38,9 +38,10 @@ class AiAgent:
     """
     prompt_template_summarize_current = "Summarize these current sensor readings in 2-3 short sentences total. No notes or closing remarks. \n"
 
-    prompt_template_battery_status = "Summarize battery status of these devices. List only devices below 50% as " \
-        "'DeviceName: NN%'. If none are below 50%, respond with just " \
-        "'All batteries up. No need any maintenance' Do not mention devices at or above 50% individually.\n"
+    prompt_template_battery_status = "Report battery status of these devices. Output only the answer itself - " \
+        "no preamble, reasoning, or explanation. List only devices below 50% as " \
+        "'DeviceName: NN%'. If no device is below 50%, respond with exactly this and nothing else: " \
+        "'All batteries up. No need any maintenance'. Do not mention devices at or above 50% individually.\n"
 
     prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
     prompt_template_history_outside_last_hours = "Summarize outside sensor readings for last hours in a few plain sentences:\n"
