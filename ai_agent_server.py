@@ -122,9 +122,12 @@ def _spawn(coro) -> None:
 
 def _ollama_reachable(config: Config, timeout: float = 2) -> bool:
     """Cheap pre-check so a GET can fail fast with 503 instead of accepting
-    work the model call is just going to fail anyway."""
+    work the model call is just going to fail anyway. Hits /v1/models
+    rather than an Ollama-native path, since OllamaClient now talks
+    OpenAI-compatible /v1/chat/completions and may be pointed at a
+    llama.cpp server instead of Ollama."""
     try:
-        response = requests.get(f"{config.ollama_url}/api/tags", timeout=timeout)
+        response = requests.get(f"{config.ollama_url}/v1/models", timeout=timeout)
         return response.ok
     except requests.RequestException:
         return False

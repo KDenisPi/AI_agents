@@ -1,9 +1,13 @@
 """
-One Ollama model + one conversation. Keeps its own message history and
-persists it to disk after every exchange, so many instances can run side
-by side (each with its own model/url/session) without stepping on each
-other's state, and a new instance can resume a prior conversation just by
-passing back the same session_id.
+One model + one conversation. Keeps its own message history and persists
+it to disk after every exchange, so many instances can run side by side
+(each with its own model/url/session) without stepping on each other's
+state, and a new instance can resume a prior conversation just by passing
+back the same session_id.
+
+Talks to the server's OpenAI-compatible /v1/chat/completions endpoint, so
+the same class works against Ollama or a llama.cpp server - anything that
+speaks that API - by just pointing `url` at it.
 """
 
 import functools
@@ -54,25 +58,28 @@ def session_id_for(model: str, name: str) -> str:
     return f"{_slug(model)}-{name}"
 
 
-def _format_tokens(metrics: dict | None) -> str:
-    """Token counts and generation rate from an Ollama response, as a log
-    suffix. Empty string if the server did not report them.
+def _format_tokens(payload: dict | None) -> str:
+    """Token counts and generation rate from an OpenAI-style chat completion
+    response, as a log suffix. Empty string if the server did not report
+    usage.
     """
-    if not metrics:
+    if not payload:
         return ""
 
-    generated = metrics.get("eval_count")
-    prompt = metrics.get("prompt_eval_count")
+    usage = payload.get("usage") or {}
+    generated = usage.get("completion_tokens")
+    prompt = usage.get("prompt_tokens")
     counts = [f"{n} {label}" for n, label in ((generated, "gen"), (prompt, "prompt")) if n]
     if not counts:
         return ""
 
     suffix = " - " + " + ".join(counts) + " tokens"
-    # eval_duration is generation time alone, in nanoseconds - a fairer rate
-    # than dividing by wall time, which also covers queueing and the prompt.
-    eval_ns = metrics.get("eval_duration")
-    if generated and eval_ns:
-        suffix += f", {generated / (eval_ns / 1e9):.1f} tok/s"
+    # "timings" is a llama.cpp server extension, not part of the OpenAI
+    # schema - plain Ollama responses won't have it, so the rate is just
+    # omitted for those.
+    rate = (payload.get("timings") or {}).get("predicted_per_second")
+    if rate:
+        suffix += f", {rate:.1f} tok/s"
     return suffix
 
 
@@ -80,7 +87,7 @@ def _timed(method):
     """Log which model was called, how long it took, and what it produced.
     Wraps in try/finally so a timeout or HTTP error is timed too - those are
     the calls whose duration is most worth seeing. For methods of a class
-    exposing .model, which may record an Ollama response dict in
+    exposing .model, which may record a chat completion response dict in
     self._last_metrics to have its token counts logged too.
     """
 
@@ -128,6 +135,10 @@ class OllamaClient:
         system: str | None = None,
         session_id: str | None = None,
         context_dir: str | Path = DEFAULT_CONTEXT_DIR,
+        # Extra OpenAI-style request fields (e.g. temperature, top_p,
+        # max_tokens) spread into the request body as-is - not Ollama's
+        # native nested "options" dict, which /v1/chat/completions doesn't
+        # accept.
         options: dict | None = None,
         timeout: float = 60,
         max_history_tokens: int | None = DEFAULT_MAX_HISTORY_TOKENS,
@@ -267,17 +278,17 @@ class OllamaClient:
             + transcript
         )
         response = requests.post(
-            f"{self.url}/api/chat",
+            f"{self.url}/v1/chat/completions",
             json={
                 "model": self.model,
                 "messages": [{"role": "user", "content": instruction}],
                 "stream": False,
-                "options": self.options,
+                **self.options,
             },
             timeout=self.timeout,
         )
         response.raise_for_status()
-        return response.json()["message"]["content"]
+        return response.json()["choices"][0]["message"]["content"]
 
     def _request(self, messages: list[dict]) -> str:
         request_messages = messages
@@ -285,12 +296,12 @@ class OllamaClient:
             request_messages = [{"role": "system", "content": self._system}] + messages
 
         response = requests.post(
-            f"{self.url}/api/chat",
+            f"{self.url}/v1/chat/completions",
             json={
                 "model": self.model,
                 "messages": request_messages,
                 "stream": False,
-                "options": self.options,
+                **self.options,
             },
             timeout=self.timeout,
         )
@@ -298,7 +309,7 @@ class OllamaClient:
 
         payload = response.json()
         self._last_metrics = payload  # picked up by @_timed for the log line
-        return payload["message"]["content"]
+        return payload["choices"][0]["message"]["content"]
 
     def _load(self) -> tuple[str | None, list[dict]]:
         if not self._context_file.exists():
