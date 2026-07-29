@@ -334,11 +334,19 @@ class OllamaClient:
 
 
 def demo():
-    bot = OllamaClient("http://<pi-ip>:11434", "llama3.2", system="You are a concise assistant.")
+    #ollama
+    bot = OllamaClient("http://192.168.1.57:11434", "llama3.2", system="You are a concise assistant.")
     print("Session ID:", bot.session_id)
 
     print(bot.chat("How do I check disk usage on my Pi?"))
     print(bot.chat("What about just the SD card partition?"))
+
+    #llama.cpp
+    bot_cpp = OllamaClient("http://192.168.1.57:8080", "llama3.2", system="You are a concise assistant.")
+    print("Session ID:", bot_cpp.session_id)
+
+    print(bot_cpp.chat("How do I check disk usage on my Pi?"))
+    print(bot_cpp.chat("What about just the SD card partition?"))
 
 
 if __name__ == "__main__":
