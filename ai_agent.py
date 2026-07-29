@@ -38,10 +38,16 @@ class AiAgent:
     """
     prompt_template_summarize_current = "Summarize these current sensor readings in 2-3 short sentences total. No notes or closing remarks. \n"
 
+    # The all-normal reply is a fixed phrase decided in code (see
+    # summarize_current_battery), never by the model - the small model kept
+    # narrating it ("There is no other device...") instead of emitting it
+    # verbatim. So the prompt only covers the listing case, which is all the
+    # model is ever asked to do here.
+    battery_low_threshold = 50
+    prompt_battery_all_normal = "All batteries up. No need any maintenance"
     prompt_template_battery_status = "Report battery status of these devices. Output only the answer itself - " \
         "no preamble, reasoning, or explanation. List only devices below 50% as " \
-        "'DeviceName: NN%'. If no device is below 50%, respond with exactly this and nothing else: " \
-        "'All batteries up. No need any maintenance'. Do not mention devices at or above 50% individually.\n"
+        "'DeviceName: NN%'. Do not mention devices at or above 50% individually.\n"
 
     prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
     prompt_template_history_outside_last_hours = "Summarize outside sensor readings for last hours in a few plain sentences:\n"
@@ -107,10 +113,20 @@ class AiAgent:
         return self.model_small.chat_once(prompt)
 
     def summarize_current_battery(self) -> str:
-        """Ask model_small for a plain-language summary of get_current()."""
+        """Summarize battery status of get_current(). When no device is
+        below battery_low_threshold, return the fixed all-normal phrase
+        without a model call - the small model narrated it instead of
+        emitting it verbatim. The model is asked only to list the devices
+        that are actually low."""
         current = self.storage.get_current([], ['battery'])
         if not current:
             return self.prompt_no_data
+        if not any(
+            metrics['battery'].value < self.battery_low_threshold
+            for metrics in current.values()
+            if 'battery' in metrics
+        ):
+            return self.prompt_battery_all_normal
         prompt = (self.prompt_template_battery_status + format_current(current))
         return self.model_small.chat_once(prompt)
 
