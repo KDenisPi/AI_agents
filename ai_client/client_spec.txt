@@ -9,7 +9,7 @@ We should not allow to initiate another request untill the current will noi be f
 
 If there are text only (voice Off, graph Off) - Just put returned text on the screen.
 If there are also voice file returned in the answer also download and play this file using current system audio output.
-If there are also graph file returned in the answer also download and show this file on screen Planned resolution is 800x600 but it can be changes if needed.
+If there are also graph file returned in the answer also download and show this file on screen Planned resolution is 800x400 but it can be changes if needed.
 
 Response format:
 Server responds with JSON. Audio and/or graph, when present, are returned as URLs within that JSON (not inline binary data) — the client downloads them separately before playing/displaying.
@@ -21,7 +21,7 @@ Error and timeout handling:
 - The client enforces its own timeout on a pending request (in addition to whatever the server-side processing time is), so a hung server call cannot lock the touchscreen indefinitely.
 - The "Thinking..." state includes an elapsed time counter (promoted from optional to required), giving the user a visual cue for how long a request has been pending and a basis for the client-side timeout.
 
-UI layout (1024x768 touchscreen):
+UI layout (1024x600 touchscreen):
 
 The screen is split into a fixed header, a left sidebar, and a main content area.
 
@@ -35,10 +35,10 @@ Left sidebar (224 wide, full height below header):
 - Answer text section: a label ("Answer text") that also functions as the processing-status indicator — shows "Thinking... m:ss" with an elapsed timer while a request is pending, and reverts to idle once a response arrives. This is a label/status only; the actual answer content is not shown here.
 
 Main content area (800 wide, right of sidebar):
-- Graph area (800x600, top): displays the returned graph image (PNG) when the Graph toggle is on and the response includes one.
+- Graph area (800x400, top): displays the returned graph image (PNG) when the Graph toggle is on and the response includes one.
   - When Audio is on and Graph is off (or the response has no graph): this area instead shows a simple looping animation (e.g. equalizer bars) indicating audio is playing. The animation is not audio-reactive — it loops on its own timer, purely as a "something is playing" indicator.
   - When both Audio and Graph are off (text-only response): this area is hidden entirely, and the answer text strip below expands to fill the freed space.
-- Answer text strip (800x108 normally, expanded when the graph area is hidden): displays the full text of the response.
+- Answer text strip (800x140 normally, expanded when the graph area is hidden): displays the full text of the response.
 
 Behavioral notes:
 - Only one request may be in flight at a time; all request-initiating controls are disabled while "Thinking..." is active.
