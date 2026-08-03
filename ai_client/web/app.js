@@ -6,6 +6,10 @@ const POLL_INTERVAL_MS = 750;
 // server itself is willing to wait on a model call - voice synthesis
 // roughly doubles response time, so this stays generous.
 const CLIENT_TIMEOUT_MS = 180000;
+// Persisted across restarts (see loadSettings/saveSettings): the Audio and
+// Graph toggles plus the "Last hours" combo value. From/To are left out -
+// an absolute date range saved once would go stale after a few days.
+const SETTINGS_STORAGE_KEY = "ai-agent-client-settings";
 
 const statusEl = document.getElementById("status");
 
@@ -56,11 +60,17 @@ function init() {
   toDateInput.value = isoDateLocal(today);
   fromDateInput.value = isoDateLocal(weekAgo);
 
+  applySettings(loadSettings());
+
   btnCurrent.addEventListener("click", requestCurrent);
   btnBattery.addEventListener("click", requestBattery);
   btnLastHours.addEventListener("click", requestLastHours);
   btnRange.addEventListener("click", requestRange);
   metricSelect.addEventListener("change", () => showMetric(metricSelect.value));
+
+  audioToggle.addEventListener("change", saveSettings);
+  graphToggle.addEventListener("change", saveSettings);
+  hoursSelect.addEventListener("change", saveSettings);
 }
 
 function isoDateLocal(d) {
@@ -68,6 +78,44 @@ function isoDateLocal(d) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+// ---- Persisted settings (Audio/Graph toggles, hours combo) ----
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    // Private-browsing / storage-disabled - fall back to defaults.
+    console.warn("Could not read saved settings:", err);
+    return {};
+  }
+}
+
+function applySettings(settings) {
+  if (typeof settings.audio === "boolean") audioToggle.checked = settings.audio;
+  if (typeof settings.graph === "boolean") graphToggle.checked = settings.graph;
+  // Only apply a saved hours value if it's one of the 1-48 options actually
+  // populated above - guards against a stale/tampered value doing nothing.
+  if (settings.hours && hoursSelect.querySelector(`option[value="${settings.hours}"]`)) {
+    hoursSelect.value = String(settings.hours);
+  }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        audio: audioToggle.checked,
+        graph: graphToggle.checked,
+        hours: hoursSelect.value,
+      })
+    );
+  } catch (err) {
+    console.warn("Could not save settings:", err);
+  }
 }
 
 function titleCase(s) {
