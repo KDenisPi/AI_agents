@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1024, initial-scale=1, user-scalable=no">
+  <title>Home weather agent</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header id="header">
+    <h1 id="title">Home weather agent</h1>
+    <span id="status">Ready</span>
+  </header>
+
+  <div id="layout">
+    <aside id="sidebar">
+      <section class="panel">
+        <h2>Requests</h2>
+        <button id="btn-current" class="req-btn">Current state</button>
+        <button id="btn-battery" class="req-btn">Battery status</button>
+      </section>
+
+      <section class="panel">
+        <h2>Time range</h2>
+        <div class="row">
+          <button id="btn-last-hours" class="req-btn grow">Last hours</button>
+          <select id="hours-select" class="hours-select"></select>
+        </div>
+        <button id="btn-range" class="req-btn full">Run range query</button>
+        <div class="field-row">
+          <label for="from-date">From:</label>
+          <input type="date" id="from-date">
+        </div>
+        <div class="field-row">
+          <label for="to-date">To:</label>
+          <input type="date" id="to-date">
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Output</h2>
+        <div class="toggle-row">
+          <span class="toggle-text">Audio</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-audio">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-text">Graph</span>
+          <label class="switch">
+            <input type="checkbox" id="toggle-graph">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel" id="metric-panel" hidden>
+        <h2>Metric</h2>
+        <select id="metric-select"></select>
+      </section>
+
+      <section class="panel">
+        <div id="answer-status" class="status-box idle">Answer text</div>
+      </section>
+    </aside>
+
+    <main id="content">
+      <div id="graph-area" hidden>
+        <img id="graph-image" alt="">
+        <div id="equalizer" hidden>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+      <div id="answer-strip"></div>
+    </main>
+  </div>
+
+  <audio id="audio-player" hidden></audio>
+  <script src="app.js"></script>
+</body>
+</html>

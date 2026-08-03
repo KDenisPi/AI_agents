@@ -70,10 +70,30 @@ AI_AGENT to Client (config.ai_client_callback_url, always POST):
     there was nothing plottable (see ai_server_graph.GraphError) - the text
     answer still went out.
 
+GET /api/poll[?request_id=<id>]
+    Alternative to the callback above, for a client with no way to accept
+    an incoming POST - a browser page, for instance. Reports on the single
+    most recently accepted request; there is no history of older ones:
+        -> 200 {"pending": true, "request_id": "<id>"}   still running
+        -> 200 <same body POST /api/response above would have carried>
+        -> 404 nothing accepted yet, or request_id doesn't match the most
+           recently accepted one (e.g. a page reload polling for a request
+           from before it)
+
+    request_id is optional here the same way it is on the GET endpoints
+    above, but omitting it only makes sense with a single poller: with it,
+    a mismatch is how a client notices it's looking at the wrong request
+    instead of silently showing someone else's answer. Polling and the
+    callback above are not exclusive - a request still gets POSTed to
+    ai_client_callback_url regardless of whether anything polls for it too.
+
 Every endpoint below follows this same accept-then-callback shape; see
 handle_current for the pattern to copy when adding another.
 
 See ai_client/simple_client.py for a minimal client exercising both sides.
+
+Also serves the touchscreen client (ai_client/web/) as static files from "/",
+same origin as the API above - the browser can reach both without CORS.
 
 Install:
     pip install starlette uvicorn requests
@@ -85,6 +105,7 @@ Run:
 import asyncio
 import contextlib
 import logging
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -105,6 +126,10 @@ logger = logging.getLogger("ai-agent-server")
 AUDIO_URL_PREFIX = "/audio"
 # Where rendered graphs are served from, mounted on config.graph_output_dir.
 GRAPH_URL_PREFIX = "/graphs"
+# The touchscreen client's static files (ai_client/web/), served from "/" -
+# same origin as the API above, so the browser needs no CORS configuration
+# to reach it.
+CLIENT_WEB_DIR = Path(__file__).parent / "ai_client" / "web"
 
 # asyncio.create_task() only holds a weak reference via the event loop - an
 # otherwise-unreferenced task can be garbage-collected mid-flight. Keeping a
@@ -131,6 +156,26 @@ def _ollama_reachable(config: Config, timeout: float = 2) -> bool:
         return response.ok
     except requests.RequestException:
         return False
+
+
+def _track_pending(app: Starlette, request_id: str | None) -> str:
+    """Record a newly accepted request as the one /api/poll will report on,
+    clearing any previous result. Returns the id to poll with - the
+    caller's own request_id if it gave one, otherwise a server-generated
+    one (moot, since nothing that skipped request_id can ask for it back).
+    """
+    tracked_id = request_id or uuid.uuid4().hex
+    app.state.poll_request_id = tracked_id
+    app.state.poll_result = None
+    return tracked_id
+
+
+def _store_result(app: Starlette, tracked_id: str, payload: dict) -> None:
+    """Make `payload` - the same dict about to be POSTed as the callback -
+    available from /api/poll, unless a newer request has since been
+    accepted and made this one stale."""
+    if app.state.poll_request_id == tracked_id:
+        app.state.poll_result = {**payload, "request_id": tracked_id}
 
 
 def _audio_url(config: Config, path: Path, base_url: str) -> str:
@@ -199,10 +244,12 @@ def make_app(config: Config) -> Starlette:
         if not reachable:
             return JSONResponse({"error": "model not available"}, status_code=503)
 
+        tracked_id = _track_pending(request.app, request_id)
         _spawn(
             _run_current(
                 config,
-                request.app.state.agent,
+                request.app,
+                tracked_id,
                 request_id,
                 wants_audio,
                 voice,
@@ -218,12 +265,14 @@ def make_app(config: Config) -> Starlette:
 
     async def _run_current(
         config: Config,
-        agent: AiAgent,
+        app: Starlette,
+        tracked_id: str,
         request_id: str | None,
         wants_audio: bool,
         voice: str | None,
         base_url: str,
     ) -> None:
+        agent = app.state.agent
         try:
             text = await asyncio.to_thread(agent.summarize_current)
             payload = {"text": text, "audio_url": None}
@@ -235,6 +284,7 @@ def make_app(config: Config) -> Starlette:
                 await _add_audio(config, agent, payload, text, voice, base_url)
         if request_id:
             payload["request_id"] = request_id
+        _store_result(app, tracked_id, payload)
         await _post_callback(config, payload)
 
     async def handle_current_battery(request: Request) -> Response:
@@ -250,10 +300,12 @@ def make_app(config: Config) -> Starlette:
         if not reachable:
             return JSONResponse({"error": "model not available"}, status_code=503)
 
+        tracked_id = _track_pending(request.app, request_id)
         _spawn(
             _run_current_battery(
                 config,
-                request.app.state.agent,
+                request.app,
+                tracked_id,
                 request_id,
                 wants_audio,
                 voice,
@@ -269,12 +321,14 @@ def make_app(config: Config) -> Starlette:
 
     async def _run_current_battery(
         config: Config,
-        agent: AiAgent,
+        app: Starlette,
+        tracked_id: str,
         request_id: str | None,
         wants_audio: bool,
         voice: str | None,
         base_url: str,
     ) -> None:
+        agent = app.state.agent
         try:
             text = await asyncio.to_thread(agent.summarize_current_battery)
             payload = {"text": text, "audio_url": None}
@@ -286,6 +340,7 @@ def make_app(config: Config) -> Starlette:
                 await _add_audio(config, agent, payload, text, voice, base_url)
         if request_id:
             payload["request_id"] = request_id
+        _store_result(app, tracked_id, payload)
         await _post_callback(config, payload)
 
     async def handle_outside_today(request: Request) -> Response:
@@ -302,10 +357,12 @@ def make_app(config: Config) -> Starlette:
         if not reachable:
             return JSONResponse({"error": "model not available"}, status_code=503)
 
+        tracked_id = _track_pending(request.app, request_id)
         _spawn(
             _run_outside_today(
                 config,
-                request.app.state.agent,
+                request.app,
+                tracked_id,
                 request_id,
                 wants_audio,
                 voice,
@@ -322,13 +379,15 @@ def make_app(config: Config) -> Starlette:
 
     async def _run_outside_today(
         config: Config,
-        agent: AiAgent,
+        app: Starlette,
+        tracked_id: str,
         request_id: str | None,
         wants_audio: bool,
         voice: str | None,
         wants_graph: bool,
         base_url: str,
     ) -> None:
+        agent = app.state.agent
         try:
             text, graphs = await asyncio.to_thread(
                 agent.summarize_outside_for_today, wants_graph
@@ -346,6 +405,7 @@ def make_app(config: Config) -> Starlette:
                 await _add_audio(config, agent, payload, text, voice, base_url)
         if request_id:
             payload["request_id"] = request_id
+        _store_result(app, tracked_id, payload)
         await _post_callback(config, payload)
 
     async def handle_outside_last_hours(request: Request) -> Response:
@@ -372,10 +432,12 @@ def make_app(config: Config) -> Starlette:
         if not reachable:
             return JSONResponse({"error": "model not available"}, status_code=503)
 
+        tracked_id = _track_pending(request.app, request_id)
         _spawn(
             _run_outside_last_hours(
                 config,
-                request.app.state.agent,
+                request.app,
+                tracked_id,
                 request_id,
                 hours,
                 wants_graph,
@@ -391,12 +453,14 @@ def make_app(config: Config) -> Starlette:
 
     async def _run_outside_last_hours(
         config: Config,
-        agent: AiAgent,
+        app: Starlette,
+        tracked_id: str,
         request_id: str | None,
         hours: int,
         wants_graph: bool,
         base_url: str,
     ) -> None:
+        agent = app.state.agent
         try:
             text, graphs = await asyncio.to_thread(
                 agent.summarize_history_outside_last_hours, hours, None, wants_graph
@@ -411,11 +475,28 @@ def make_app(config: Config) -> Starlette:
             payload = {"error": str(e)}
         if request_id:
             payload["request_id"] = request_id
+        _store_result(app, tracked_id, payload)
         await _post_callback(config, payload)
+
+    async def handle_poll(request: Request) -> Response:
+        tracked_id = request.app.state.poll_request_id
+        if tracked_id is None:
+            return JSONResponse({"error": "no request has been accepted yet"}, status_code=404)
+
+        request_id = request.query_params.get("request_id")
+        if request_id and request_id != tracked_id:
+            return JSONResponse({"error": "unknown or stale request_id"}, status_code=404)
+
+        result = request.app.state.poll_result
+        if result is None:
+            return JSONResponse({"pending": True, "request_id": tracked_id}, status_code=200)
+        return JSONResponse(result, status_code=200)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: Starlette):
         app.state.agent = AiAgent(config)
+        app.state.poll_request_id = None
+        app.state.poll_result = None
         try:
             yield
         finally:
@@ -432,6 +513,7 @@ def make_app(config: Config) -> Starlette:
             Route("/api/current_battery", handle_current_battery, methods=["GET"]),
             Route("/api/outside_today", handle_outside_today, methods=["GET"]),
             Route("/api/outside_last_hours", handle_outside_last_hours, methods=["GET"]),
+            Route("/api/poll", handle_poll, methods=["GET"]),
             Mount(
                 AUDIO_URL_PREFIX,
                 StaticFiles(directory=config.voice_output_dir),
@@ -442,6 +524,10 @@ def make_app(config: Config) -> Starlette:
                 StaticFiles(directory=config.graph_output_dir),
                 name="graphs",
             ),
+            # Catch-all for everything not matched above - must stay last,
+            # or it would swallow the /api/* routes and the mounts before
+            # they ever get a chance to match.
+            Mount("/", StaticFiles(directory=CLIENT_WEB_DIR, html=True), name="client"),
         ],
         lifespan=lifespan,
     )
