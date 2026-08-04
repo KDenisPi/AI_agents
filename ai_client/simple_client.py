@@ -129,10 +129,12 @@ def request_outside_today(agent_url: str, voice: str | None = None, graph: bool 
     _get(agent_url, "/api/outside_today", params)
 
 
-def request_outside_last_hours(agent_url: str, hours: int = 24, graph: bool = False) -> None:
-    # No voice on this endpoint (see ai_agent_server.py) - graphs only, so
-    # --voice is deliberately not forwarded here.
+def request_outside_last_hours(
+    agent_url: str, hours: int = 24, voice: str | None = None, graph: bool = False
+) -> None:
     params = {"request_id": make_request_id(), "hours": str(hours)}
+    if voice is not None:
+        params["voice"] = voice
     if graph:
         params["graph"] = ""
     _get(agent_url, "/api/outside_last_hours", params)
@@ -152,7 +154,7 @@ def _menu(args: argparse.Namespace) -> list[tuple[str, callable]]:
         ),
         (
             f"Outside, last {args.hours}h (/api/outside_last_hours)",
-            lambda: request_outside_last_hours(args.agent_url, args.hours, args.graph),
+            lambda: request_outside_last_hours(args.agent_url, args.hours, args.voice, args.graph),
         ),
         (
             "Current battery status (/api/current_battery)",

@@ -22,8 +22,9 @@
 
       <section class="panel">
         <h2>Time range</h2>
+        <button id="btn-outside-today" class="req-btn">Outside today</button>
         <div class="row">
-          <button id="btn-last-hours" class="req-btn grow">Last hours</button>
+          <button id="btn-last-hours" class="req-btn grow">Outside last</button>
           <select id="hours-select" class="hours-select"></select>
         </div>
         <button id="btn-range" class="req-btn full">Run range query</button>
@@ -46,6 +47,7 @@
             <span class="slider"></span>
           </label>
         </div>
+        <p class="toggle-hint">Current state, Battery status, Outside today, Outside last, Range</p>
         <div class="toggle-row">
           <span class="toggle-text">Graph</span>
           <label class="switch">
@@ -53,6 +55,7 @@
             <span class="slider"></span>
           </label>
         </div>
+        <p class="toggle-hint">Outside today, Outside last, Range</p>
       </section>
 
       <section class="panel" id="metric-panel" hidden>

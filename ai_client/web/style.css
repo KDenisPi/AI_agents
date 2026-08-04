@@ -108,6 +108,13 @@ body {
   gap: 14px;
 }
 
+.panel {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 10px 12px;
+}
+
 .panel h2 {
   margin: 0 0 8px;
   font-size: 11px;
@@ -217,16 +224,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.toggle-row:last-child {
-  margin-bottom: 0;
+  margin-bottom: 4px;
 }
 
 .toggle-text {
   font-size: 15px;
   font-weight: 600;
+}
+
+.toggle-hint {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--panel-label);
+}
+
+.toggle-hint:last-child {
+  margin-bottom: 0;
 }
 
 .switch {

@@ -43,15 +43,14 @@ Client to AI_AGENT:
         graph is a bare flag - "&graph" is enough - and asks for a PNG per
         metric alongside the text.
 
-    GET /api/outside_last_hours[?request_id=<id>][&hours=<n>][&graph][&callback]
+    GET /api/outside_last_hours[?request_id=<id>][&hours=<n>][&voice[=<name>]][&graph][&callback]
         Same 200/503/500 contract as /api/current, plus 400 if hours is
         given but not a positive integer. Summarizes the last <hours> of
         outside temperature+humidity
         (AiAgent.summarize_history_outside_last_hours, i.e.
         MetricStorage.get_history_outside_last_hours). hours defaults to 24.
-        Graphs only, no voice - graph works exactly as it does on
-        /api/outside_today; there is no voice flag on this endpoint.
-        callback works exactly as it does on /api/current.
+        voice, graph and callback all work exactly as they do on
+        /api/outside_today.
 
 AI_AGENT to Client (config.ai_client_callback_url, POST - only for a
 request that asked for it with &callback, see above):
@@ -445,6 +444,9 @@ def make_app(config: Config) -> Starlette:
     async def handle_outside_last_hours(request: Request) -> Response:
         _log_request(request)
         request_id = request.query_params.get("request_id")
+        # Same reasoning as handle_current above.
+        wants_audio = "voice" in request.query_params
+        voice = request.query_params.get("voice") or None
         wants_graph = "graph" in request.query_params
         wants_callback = "callback" in request.query_params
         # hours is optional and defaults to 24. Reject a non-integer or
@@ -476,6 +478,8 @@ def make_app(config: Config) -> Starlette:
                 tracked_id,
                 request_id,
                 hours,
+                wants_audio,
+                voice,
                 wants_graph,
                 wants_callback,
                 # Captured here because the callback is built long after the
@@ -494,6 +498,8 @@ def make_app(config: Config) -> Starlette:
         tracked_id: str,
         request_id: str | None,
         hours: int,
+        wants_audio: bool,
+        voice: str | None,
         wants_graph: bool,
         wants_callback: bool,
         base_url: str,
@@ -511,6 +517,9 @@ def make_app(config: Config) -> Starlette:
         except Exception as e:
             logger.exception("summarize_history_outside_last_hours failed")
             payload = {"error": str(e)}
+        else:
+            if wants_audio:
+                await _add_audio(config, agent, payload, text, voice, base_url)
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)

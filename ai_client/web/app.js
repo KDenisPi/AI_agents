@@ -16,6 +16,7 @@ const statusEl = document.getElementById("status");
 
 const btnCurrent = document.getElementById("btn-current");
 const btnBattery = document.getElementById("btn-battery");
+const btnOutsideToday = document.getElementById("btn-outside-today");
 const btnLastHours = document.getElementById("btn-last-hours");
 const hoursSelect = document.getElementById("hours-select");
 const btnRange = document.getElementById("btn-range");
@@ -36,7 +37,7 @@ const answerStrip = document.getElementById("answer-strip");
 const audioPlayer = document.getElementById("audio-player");
 
 const lockable = [
-  btnCurrent, btnBattery, btnLastHours, hoursSelect, btnRange,
+  btnCurrent, btnBattery, btnOutsideToday, btnLastHours, hoursSelect, btnRange,
   fromDateInput, toDateInput, audioToggle, graphToggle,
 ];
 
@@ -65,6 +66,7 @@ function init() {
 
   btnCurrent.addEventListener("click", requestCurrent);
   btnBattery.addEventListener("click", requestBattery);
+  btnOutsideToday.addEventListener("click", requestOutsideToday);
   btnLastHours.addEventListener("click", requestLastHours);
   btnRange.addEventListener("click", requestRange);
   metricSelect.addEventListener("change", () => showMetric(metricSelect.value));
@@ -157,13 +159,22 @@ function requestBattery() {
   startRequest(buildUrl("/api/current_battery", params), requestId);
 }
 
+function requestOutsideToday() {
+  if (locked) return;
+  const requestId = buildRequestId();
+  const params = { request_id: requestId };
+  if (audioToggle.checked) params.voice = true;
+  if (graphToggle.checked) params.graph = true;
+  startRequest(buildUrl("/api/outside_today", params), requestId);
+}
+
 function requestLastHours() {
   if (locked) return;
   const requestId = buildRequestId();
   const hours = parseInt(hoursSelect.value, 10);
   const params = { request_id: requestId, hours };
+  if (audioToggle.checked) params.voice = true;
   if (graphToggle.checked) params.graph = true;
-  // No voice param here - /api/outside_last_hours has no voice option.
   startRequest(buildUrl("/api/outside_last_hours", params), requestId);
 }
 
@@ -182,6 +193,7 @@ function requestRange() {
   }
   const requestId = buildRequestId();
   const params = { request_id: requestId, hours };
+  if (audioToggle.checked) params.voice = true;
   if (graphToggle.checked) params.graph = true;
   startRequest(buildUrl("/api/outside_last_hours", params), requestId);
 }
