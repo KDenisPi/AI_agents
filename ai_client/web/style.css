@@ -200,7 +200,10 @@ body {
 
 .field-row label {
   color: var(--panel-label);
-  flex: 0 0 auto;
+  /* Fixed rather than auto - "From:" and "To:" differ in width, so an auto
+     label would leave the inputs (flex: 1 1 auto below) different widths
+     even though both rows are the same overall width. */
+  flex: 0 0 40px;
 }
 
 .field-row input[type="date"] {
