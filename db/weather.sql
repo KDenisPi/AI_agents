@@ -137,6 +137,7 @@ INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (4, 'TVOC');
 INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (5, 'battery');
 INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (6, 'pressure');
 INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (7, 'illuminance');
+INSERT INTO `weather`.`metric` (`metricid`, `metric`) VALUES (8, 'power');
 
 COMMIT;
 

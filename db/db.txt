@@ -1,1 +1,4 @@
 SELECT User, Host FROM mysql.user;
+
+mariadb -h 192.168.1.11 -P 3306 -u root -p < db/weather.sql
+
