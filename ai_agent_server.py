@@ -226,6 +226,15 @@ async def _add_audio(
         payload["audio_error"] = str(e)
 
 
+def _log_request(request: Request) -> None:
+    """One INFO line per incoming GET, every query param included verbatim -
+    uvicorn's own access log has the raw query string too, but interleaved
+    with unrelated traffic and not worth eyeballing to answer "did this
+    request actually ask for a graph/voice/callback". Cheap enough to log
+    unconditionally."""
+    logger.info("%s %s", request.url.path, dict(request.query_params))
+
+
 async def _post_callback(config: Config, payload: dict) -> None:
     try:
         await asyncio.to_thread(
@@ -240,6 +249,7 @@ async def _post_callback(config: Config, payload: dict) -> None:
 
 def make_app(config: Config) -> Starlette:
     async def handle_current(request: Request) -> Response:
+        _log_request(request)
         request_id = request.query_params.get("request_id")
         # "voice" is a bare flag, so its value is the empty string - falsy,
         # which is why presence is tested by membership and not .get().
@@ -302,6 +312,7 @@ def make_app(config: Config) -> Starlette:
             await _post_callback(config, payload)
 
     async def handle_current_battery(request: Request) -> Response:
+        _log_request(request)
         request_id = request.query_params.get("request_id")
         # Same reasoning as handle_current above.
         wants_audio = "voice" in request.query_params
@@ -362,6 +373,7 @@ def make_app(config: Config) -> Starlette:
             await _post_callback(config, payload)
 
     async def handle_outside_today(request: Request) -> Response:
+        _log_request(request)
         request_id = request.query_params.get("request_id")
         # Same reasoning as handle_current above.
         wants_audio = "voice" in request.query_params
@@ -431,6 +443,7 @@ def make_app(config: Config) -> Starlette:
             await _post_callback(config, payload)
 
     async def handle_outside_last_hours(request: Request) -> Response:
+        _log_request(request)
         request_id = request.query_params.get("request_id")
         wants_graph = "graph" in request.query_params
         wants_callback = "callback" in request.query_params
