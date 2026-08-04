@@ -8,7 +8,7 @@ that wants to move on immediately and get spoken to when the answer is
 ready.
 
 Client to AI_AGENT:
-    GET /api/current[?request_id=<id>][&voice[=<name>]]
+    GET /api/current[?request_id=<id>][&voice[=<name>]][&callback]
         -> 200 (request accepted, answer to follow)
         -> 503 (model not available right now)
         -> 500 (something else went wrong before work could start)
@@ -23,21 +23,27 @@ Client to AI_AGENT:
     text_to_voice.VOICES instead of config.ollama_voice. Synthesis roughly
     doubles the time to the callback.
 
-    GET /api/current_battery[?request_id=<id>][&voice[=<name>]]
-        Same 200/503/500 contract as /api/current. Summarizes battery
-        levels (AiAgent.summarize_current_battery). voice works exactly
-        as it does on /api/current.
+    callback is a bare flag - "&callback" is enough - and asks for the
+    answer to also be POSTed to config.ai_client_callback_url once ready
+    (see below). Omit it for a client that only polls /api/poll - a
+    browser page, say - so the server doesn't waste an attempt POSTing to
+    a URL nothing is listening on.
 
-    GET /api/outside_today[?request_id=<id>][&voice[=<name>]][&graph]
+    GET /api/current_battery[?request_id=<id>][&voice[=<name>]][&callback]
+        Same 200/503/500 contract as /api/current. Summarizes battery
+        levels (AiAgent.summarize_current_battery). voice and callback
+        work exactly as they do on /api/current.
+
+    GET /api/outside_today[?request_id=<id>][&voice[=<name>]][&graph][&callback]
         Same 200/503/500 contract as /api/current. Summarizes today's
         outside temperature+humidity (AiAgent.summarize_outside_for_today,
-        i.e. MetricStorage.today_outside() - 08:00-21:00 or now). voice
-        works exactly as it does on /api/current.
+        i.e. MetricStorage.today_outside() - 08:00-21:00 or now). voice and
+        callback work exactly as they do on /api/current.
 
         graph is a bare flag - "&graph" is enough - and asks for a PNG per
         metric alongside the text.
 
-    GET /api/outside_last_hours[?request_id=<id>][&hours=<n>][&graph]
+    GET /api/outside_last_hours[?request_id=<id>][&hours=<n>][&graph][&callback]
         Same 200/503/500 contract as /api/current, plus 400 if hours is
         given but not a positive integer. Summarizes the last <hours> of
         outside temperature+humidity
@@ -45,8 +51,10 @@ Client to AI_AGENT:
         MetricStorage.get_history_outside_last_hours). hours defaults to 24.
         Graphs only, no voice - graph works exactly as it does on
         /api/outside_today; there is no voice flag on this endpoint.
+        callback works exactly as it does on /api/current.
 
-AI_AGENT to Client (config.ai_client_callback_url, always POST):
+AI_AGENT to Client (config.ai_client_callback_url, POST - only for a
+request that asked for it with &callback, see above):
     POST /api/response
         {"request_id": "<id or omitted>", "text": "...", "audio_url": null, "graphs": null}
         or, if the request failed after being accepted:
@@ -84,8 +92,10 @@ GET /api/poll[?request_id=<id>]
     above, but omitting it only makes sense with a single poller: with it,
     a mismatch is how a client notices it's looking at the wrong request
     instead of silently showing someone else's answer. Polling and the
-    callback above are not exclusive - a request still gets POSTed to
-    ai_client_callback_url regardless of whether anything polls for it too.
+    callback above are not exclusive - a request can ask for both with
+    &callback. Neither happens on its own: polling means calling this
+    endpoint yourself, and the callback POST requires &callback on the
+    original request.
 
 Every endpoint below follows this same accept-then-callback shape; see
 handle_current for the pattern to copy when adding another.
@@ -236,6 +246,7 @@ def make_app(config: Config) -> Starlette:
         # "voice=leo" names a voice; plain "voice" leaves it to the agent.
         wants_audio = "voice" in request.query_params
         voice = request.query_params.get("voice") or None
+        wants_callback = "callback" in request.query_params
         try:
             reachable = await asyncio.to_thread(_ollama_reachable, config)
         except Exception as e:
@@ -253,6 +264,7 @@ def make_app(config: Config) -> Starlette:
                 request_id,
                 wants_audio,
                 voice,
+                wants_callback,
                 # Captured here because the callback is built long after the
                 # request object is gone.
                 str(request.base_url),
@@ -270,6 +282,7 @@ def make_app(config: Config) -> Starlette:
         request_id: str | None,
         wants_audio: bool,
         voice: str | None,
+        wants_callback: bool,
         base_url: str,
     ) -> None:
         agent = app.state.agent
@@ -285,13 +298,15 @@ def make_app(config: Config) -> Starlette:
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)
-        await _post_callback(config, payload)
+        if wants_callback:
+            await _post_callback(config, payload)
 
     async def handle_current_battery(request: Request) -> Response:
         request_id = request.query_params.get("request_id")
         # Same reasoning as handle_current above.
         wants_audio = "voice" in request.query_params
         voice = request.query_params.get("voice") or None
+        wants_callback = "callback" in request.query_params
         try:
             reachable = await asyncio.to_thread(_ollama_reachable, config)
         except Exception as e:
@@ -309,6 +324,7 @@ def make_app(config: Config) -> Starlette:
                 request_id,
                 wants_audio,
                 voice,
+                wants_callback,
                 # Captured here because the callback is built long after the
                 # request object is gone.
                 str(request.base_url),
@@ -326,6 +342,7 @@ def make_app(config: Config) -> Starlette:
         request_id: str | None,
         wants_audio: bool,
         voice: str | None,
+        wants_callback: bool,
         base_url: str,
     ) -> None:
         agent = app.state.agent
@@ -341,7 +358,8 @@ def make_app(config: Config) -> Starlette:
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)
-        await _post_callback(config, payload)
+        if wants_callback:
+            await _post_callback(config, payload)
 
     async def handle_outside_today(request: Request) -> Response:
         request_id = request.query_params.get("request_id")
@@ -349,6 +367,7 @@ def make_app(config: Config) -> Starlette:
         wants_audio = "voice" in request.query_params
         voice = request.query_params.get("voice") or None
         wants_graph = "graph" in request.query_params
+        wants_callback = "callback" in request.query_params
         try:
             reachable = await asyncio.to_thread(_ollama_reachable, config)
         except Exception as e:
@@ -367,6 +386,7 @@ def make_app(config: Config) -> Starlette:
                 wants_audio,
                 voice,
                 wants_graph,
+                wants_callback,
                 # Captured here because the callback is built long after the
                 # request object is gone.
                 str(request.base_url),
@@ -385,6 +405,7 @@ def make_app(config: Config) -> Starlette:
         wants_audio: bool,
         voice: str | None,
         wants_graph: bool,
+        wants_callback: bool,
         base_url: str,
     ) -> None:
         agent = app.state.agent
@@ -406,11 +427,13 @@ def make_app(config: Config) -> Starlette:
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)
-        await _post_callback(config, payload)
+        if wants_callback:
+            await _post_callback(config, payload)
 
     async def handle_outside_last_hours(request: Request) -> Response:
         request_id = request.query_params.get("request_id")
         wants_graph = "graph" in request.query_params
+        wants_callback = "callback" in request.query_params
         # hours is optional and defaults to 24. Reject a non-integer or
         # non-positive value up front rather than silently summarizing the
         # wrong span - this is the only endpoint that can 400.
@@ -441,6 +464,7 @@ def make_app(config: Config) -> Starlette:
                 request_id,
                 hours,
                 wants_graph,
+                wants_callback,
                 # Captured here because the callback is built long after the
                 # request object is gone.
                 str(request.base_url),
@@ -458,6 +482,7 @@ def make_app(config: Config) -> Starlette:
         request_id: str | None,
         hours: int,
         wants_graph: bool,
+        wants_callback: bool,
         base_url: str,
     ) -> None:
         agent = app.state.agent
@@ -476,7 +501,8 @@ def make_app(config: Config) -> Starlette:
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)
-        await _post_callback(config, payload)
+        if wants_callback:
+            await _post_callback(config, payload)
 
     async def handle_poll(request: Request) -> Response:
         tracked_id = request.app.state.poll_request_id

@@ -1,7 +1,8 @@
 "use strict";
 
-// How often to ask /api/poll whether the pending request is done.
-const POLL_INTERVAL_MS = 750;
+// How often to ask /api/poll whether the pending request is done. The UI
+// shows an elapsed-time counter regardless, so this can stay coarse.
+const POLL_INTERVAL_MS = 2000;
 // Client-side ceiling on a pending request, independent of whatever the
 // server itself is willing to wait on a model call - voice synthesis
 // roughly doubles response time, so this stays generous.

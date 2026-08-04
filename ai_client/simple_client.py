@@ -91,6 +91,10 @@ def _download(url: str) -> None:
 
 
 def _get(agent_url: str, path: str, params: dict[str, str]) -> None:
+    # This client only ever listens for the callback (no polling), so every
+    # request must opt into it - the server no longer POSTs unconditionally,
+    # since a poll-only client (the touchscreen web UI) doesn't want it.
+    params = {**params, "callback": ""}
     query = "&".join(f"{k}={v}" if v else k for k, v in params.items())
     try:
         response = requests.get(f"{agent_url}{path}", params=params, timeout=5)
