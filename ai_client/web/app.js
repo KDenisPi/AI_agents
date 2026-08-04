@@ -330,7 +330,7 @@ function updateElapsed() {
 function setAnswerStatusIdle() {
   answerStatus.classList.remove("thinking");
   answerStatus.classList.add("idle");
-  answerStatus.textContent = "Answer text";
+  answerStatus.textContent = "Ready";
 }
 
 function showAnswerText(text, isError) {
