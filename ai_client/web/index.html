@@ -9,6 +9,22 @@
 <body>
   <header id="header">
     <h1 id="title">Home weather agent</h1>
+    <div id="header-toggles">
+      <label class="header-toggle" title="Current state, Battery status, Outside today, Outside last, Range">
+        <span class="toggle-text">Audio</span>
+        <span class="switch">
+          <input type="checkbox" id="toggle-audio">
+          <span class="slider"></span>
+        </span>
+      </label>
+      <label class="header-toggle" title="Outside today, Outside last, Range">
+        <span class="toggle-text">Graph</span>
+        <span class="switch">
+          <input type="checkbox" id="toggle-graph">
+          <span class="slider"></span>
+        </span>
+      </label>
+    </div>
     <span id="status">Ready</span>
   </header>
 
@@ -36,26 +52,6 @@
           <label for="to-date">To:</label>
           <input type="date" id="to-date">
         </div>
-      </section>
-
-      <section class="panel">
-        <h2>Output</h2>
-        <div class="toggle-row">
-          <span class="toggle-text">Audio</span>
-          <label class="switch">
-            <input type="checkbox" id="toggle-audio">
-            <span class="slider"></span>
-          </label>
-        </div>
-        <p class="toggle-hint">Current state, Battery status, Outside today, Outside last, Range</p>
-        <div class="toggle-row">
-          <span class="toggle-text">Graph</span>
-          <label class="switch">
-            <input type="checkbox" id="toggle-graph">
-            <span class="slider"></span>
-          </label>
-        </div>
-        <p class="toggle-hint">Outside today, Outside last, Range</p>
       </section>
 
       <section class="panel" id="metric-panel" hidden>
