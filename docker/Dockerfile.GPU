@@ -32,7 +32,11 @@ COPY . .
 # becomes unwritable. Point it at an app-owned, world-writable dir instead so
 # SNAC.from_pretrained() can download and cache the vocoder regardless of uid.
 ENV HF_HOME=/app/.cache/huggingface
-RUN mkdir -p /app/.cache/huggingface && chmod -R 777 /app/.cache
+# Same reasoning for matplotlib's config/cache dir - unset, it defaults to
+# $HOME/.config/matplotlib ("/.config"), which the same unwritable-$HOME
+# problem breaks.
+ENV MPLCONFIGDIR=/app/.cache/matplotlib
+RUN mkdir -p /app/.cache/huggingface /app/.cache/matplotlib && chmod -R 777 /app/.cache
 
 # Skip the network round-trip from_pretrained() otherwise makes on every
 # process start to verify the cached SNAC weights are current. Safe here
