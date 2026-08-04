@@ -9,6 +9,7 @@ rest of the agent never writes SQL directly:
     get_stats(metric, period, [locations])    -> min/max/avg/count per location
     get_stats_last_hours(metric, hours, [locations])   -> get_stats, last N hours
     get_stats_last_days(metric, days, [locations])     -> get_stats, last N days
+    get_stats_outside_last_hours(metric, hours)        -> get_stats_last_hours, outside only
     get_history(metric, start, end, [locations]) -> raw readings per location
     get_history_last_hours(metric, hours, [locations]) -> get_history, last N hours
     get_history_last_days(metric, days, [locations])   -> get_history, last N days
@@ -327,6 +328,12 @@ class MetricStorage:
     ) -> dict[str, MetricStats] | dict[str, dict[str, MetricStats]]:
         """get_stats over the last `days`, ending now."""
         return self.get_stats(metric, timedelta(days=days), locations)
+
+    def get_stats_outside_last_hours(
+        self, metric: str | list[str], hours: int
+    ) -> dict[str, MetricStats] | dict[str, dict[str, MetricStats]]:
+        """get_stats over the last `hours`, ending now, outside_locations only."""
+        return self.get_stats(metric, timedelta(hours=hours), self.outside_locations)
 
     def get_history(
         self,

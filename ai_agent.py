@@ -53,7 +53,12 @@ class AiAgent:
         "'DeviceName: NN%'. Do not mention devices at or above 50% individually.\n"
 
     prompt_template_translate_en_ru = "Translate these sentences from English to Russian:\n"
-    prompt_template_history_outside_last_hours = "Summarize outside sensor readings for last hours in a few plain sentences:\n"
+    # {hours} filled in per call. Fed min/max/avg/count, not raw readings -
+    # see summarize_history_outside_last_hours - so it's told as much, and
+    # given the same "no notes or closing remarks" guard as the today
+    # template below: a small model handed a wall of numbers with no such
+    # guard tends to append a chatty offer to help instead of stopping.
+    prompt_template_history_outside_last_hours = "Summarize outside sensor min/max/avg readings for the last {hours} hours in 2-3 short sentences total. No notes or closing remarks.\n"
     prompt_template_outside_for_today = "Summarize outside sensor readings for today in 2-3 short sentences total. \
 	Temperature: one sentence with range and peak only (provide time when it happened). Humidity: one short clause with just the range, no trend detail. No notes or closing remarks.:\n"
     prompt_no_data = "No current data available."
@@ -137,25 +142,34 @@ class AiAgent:
         self, hours: int, metrics: list[str] | None = None, graph: bool = False
     ) -> tuple[str, dict[str, Path]]:
         """Ask model_small for a plain-language summary of
-        get_history_outside_last_hours(). Returns (summary, graphs) -
-        graphs is empty unless graph=True, in which case it holds one
-        rendered PNG per metric (ai_server_graph.plot_metrics(), reusing
-        the same history already fetched for the prompt rather than
-        querying again)."""
-        history = self.storage.get_history_outside_last_hours(
-            metrics or ['temperature', 'humidity'], hours
-        )
-        if not history:
+        get_stats_outside_last_hours() - min/max/avg/count, not every raw
+        reading. At the collector's 10-minute interval, 24 hours is ~150
+        readings per metric; handed that as a raw list (the previous
+        approach, via get_history + format_history) a small model tends to
+        just echo it back as a table instead of summarizing it, and the
+        prompt only grows with the window regardless. Stats are one line
+        per metric no matter how many hours are requested. Returns
+        (summary, graphs) - graphs is empty unless graph=True, in which
+        case it holds one rendered PNG per metric
+        (ai_server_graph.plot_metrics()), from a separate raw-history query
+        only made when a graph is actually wanted."""
+        metrics = metrics or ['temperature', 'humidity']
+        stats = self.storage.get_stats_outside_last_hours(metrics, hours)
+        if not stats:
             return self.prompt_no_data, {}
 
         graphs: dict[str, Path] = {}
         if graph:
+            history = self.storage.get_history_outside_last_hours(metrics, hours)
             try:
                 graphs = self._grapher.plot_metrics(history)
             except GraphError:
                 pass  # nothing to plot - the text summary still goes out
 
-        prompt = (self.prompt_template_history_outside_last_hours + format_history(history))
+        prompt = (
+            self.prompt_template_history_outside_last_hours.format(hours=hours)
+            + format_stats(stats)
+        )
         return self.model_small.chat_once(prompt), graphs
 
     def summarize_outside_for_today(self, graph: bool = False) -> tuple[str, dict[str, Path]]:
