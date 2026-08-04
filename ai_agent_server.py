@@ -114,6 +114,7 @@ Run:
 import asyncio
 import contextlib
 import logging
+import time
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -130,6 +131,20 @@ from ai_agent import AiAgent
 from Config import Config
 
 logger = logging.getLogger("ai-agent-server")
+
+
+class _DemotePollAccessLog(logging.Filter):
+    """uvicorn's own access log fires once per HTTP request, including
+    /api/poll - which a client polls every couple seconds for as long as a
+    request is pending, unlike every other endpoint here (one hit per user
+    action). Left alone it drowns everything else at INFO. Suppress just
+    those lines unless this app's own logger would show DEBUG anyway, so
+    LOG_LEVEL=DEBUG still gets them."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if "/api/poll" in record.getMessage():
+            return logger.isEnabledFor(logging.DEBUG)
+        return True
 
 # Where synthesized WAVs are served from, mounted on config.voice_output_dir.
 AUDIO_URL_PREFIX = "/audio"
@@ -234,6 +249,19 @@ def _log_request(request: Request) -> None:
     logger.info("%s %s", request.url.path, dict(request.query_params))
 
 
+def _log_done(path: str, request_id: str | None, payload: dict, started: float) -> None:
+    """Counterpart to _log_request: how long the accepted request actually
+    took end to end, tagged with request_id so it's attributable when more
+    than one is in flight. The model-call timings logged elsewhere
+    (OllamaClient's "chat_once ok in Xs", TextToVoice's "synthesize(...) ->
+    ... in Xs") don't say which request they belonged to or how the stages
+    - DB query, summarization, speech synthesis - added up to the total."""
+    status = "error" if "error" in payload else "ok"
+    logger.info(
+        "%s %s in %.2fs (request_id=%s)", path, status, time.monotonic() - started, request_id
+    )
+
+
 async def _post_callback(config: Config, payload: dict) -> None:
     try:
         await asyncio.to_thread(
@@ -249,6 +277,7 @@ async def _post_callback(config: Config, payload: dict) -> None:
 def make_app(config: Config) -> Starlette:
     async def handle_current(request: Request) -> Response:
         _log_request(request)
+        started = time.monotonic()
         request_id = request.query_params.get("request_id")
         # "voice" is a bare flag, so its value is the empty string - falsy,
         # which is why presence is tested by membership and not .get().
@@ -274,6 +303,7 @@ def make_app(config: Config) -> Starlette:
                 wants_audio,
                 voice,
                 wants_callback,
+                started,
                 # Captured here because the callback is built long after the
                 # request object is gone.
                 str(request.base_url),
@@ -292,6 +322,7 @@ def make_app(config: Config) -> Starlette:
         wants_audio: bool,
         voice: str | None,
         wants_callback: bool,
+        started: float,
         base_url: str,
     ) -> None:
         agent = app.state.agent
@@ -307,11 +338,13 @@ def make_app(config: Config) -> Starlette:
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)
+        _log_done("/api/current", request_id, payload, started)
         if wants_callback:
             await _post_callback(config, payload)
 
     async def handle_current_battery(request: Request) -> Response:
         _log_request(request)
+        started = time.monotonic()
         request_id = request.query_params.get("request_id")
         # Same reasoning as handle_current above.
         wants_audio = "voice" in request.query_params
@@ -335,6 +368,7 @@ def make_app(config: Config) -> Starlette:
                 wants_audio,
                 voice,
                 wants_callback,
+                started,
                 # Captured here because the callback is built long after the
                 # request object is gone.
                 str(request.base_url),
@@ -353,6 +387,7 @@ def make_app(config: Config) -> Starlette:
         wants_audio: bool,
         voice: str | None,
         wants_callback: bool,
+        started: float,
         base_url: str,
     ) -> None:
         agent = app.state.agent
@@ -368,11 +403,13 @@ def make_app(config: Config) -> Starlette:
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)
+        _log_done("/api/current_battery", request_id, payload, started)
         if wants_callback:
             await _post_callback(config, payload)
 
     async def handle_outside_today(request: Request) -> Response:
         _log_request(request)
+        started = time.monotonic()
         request_id = request.query_params.get("request_id")
         # Same reasoning as handle_current above.
         wants_audio = "voice" in request.query_params
@@ -398,6 +435,7 @@ def make_app(config: Config) -> Starlette:
                 voice,
                 wants_graph,
                 wants_callback,
+                started,
                 # Captured here because the callback is built long after the
                 # request object is gone.
                 str(request.base_url),
@@ -417,6 +455,7 @@ def make_app(config: Config) -> Starlette:
         voice: str | None,
         wants_graph: bool,
         wants_callback: bool,
+        started: float,
         base_url: str,
     ) -> None:
         agent = app.state.agent
@@ -438,11 +477,13 @@ def make_app(config: Config) -> Starlette:
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)
+        _log_done("/api/outside_today", request_id, payload, started)
         if wants_callback:
             await _post_callback(config, payload)
 
     async def handle_outside_last_hours(request: Request) -> Response:
         _log_request(request)
+        started = time.monotonic()
         request_id = request.query_params.get("request_id")
         # Same reasoning as handle_current above.
         wants_audio = "voice" in request.query_params
@@ -482,6 +523,7 @@ def make_app(config: Config) -> Starlette:
                 voice,
                 wants_graph,
                 wants_callback,
+                started,
                 # Captured here because the callback is built long after the
                 # request object is gone.
                 str(request.base_url),
@@ -502,6 +544,7 @@ def make_app(config: Config) -> Starlette:
         voice: str | None,
         wants_graph: bool,
         wants_callback: bool,
+        started: float,
         base_url: str,
     ) -> None:
         agent = app.state.agent
@@ -523,6 +566,7 @@ def make_app(config: Config) -> Starlette:
         if request_id:
             payload["request_id"] = request_id
         _store_result(app, tracked_id, payload)
+        _log_done("/api/outside_last_hours", request_id, payload, started)
         if wants_callback:
             await _post_callback(config, payload)
 
@@ -585,6 +629,7 @@ config = Config.from_env()
 if config.log_file == Config.log_file:  # LOG_FILE not overridden via env
     config.log_file = "logs/ai_agent_server.log"
 config.configure_logging()
+logging.getLogger("uvicorn.access").addFilter(_DemotePollAccessLog())
 app = make_app(config)
 
 if __name__ == "__main__":
