@@ -1,0 +1,25 @@
+docker pull clickhouse/clickhouse-server:latest
+
+#Clickhouse CLI
+curl https://clickhouse.com/cli | sh
+
+#run server
+docker run -d --name=iot-clickhouse-server -p 8123:8123 -p 9000:9000 --ulimit nofile=262144:262144 -v "$PWD/logs/clickhouse:/var/log/clickhouse-server" -v "$PWD/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server:latest
+
+#connect to server using application
+docker exec -it iot-clickhouse-server clickhouse-client
+
+#from client
+ALTER USER default IDENTIFIED WITH sha256_password BY 'your-strong-password';
+
+(Note: the CLICKHOUSE_PASSWORD env var only works on the first container startup, since it seeds users.xml — you already ran without it, so ALTER USER is the way now.)
+
+
+Recommended migration steps:
+
+Load this schema first against your new server: docker exec -i iot-clickhouse-server clickhouse-client --multiquery < weather_clickhouse.sql
+Migrate dimension data (location, sensor) — small enough to just export as CSV/TSV from MariaDB and INSERT or use clickhouse-client --query "INSERT INTO weather.sensor FORMAT CSV" < sensor.csv.
+Backfill raw metering history the same way — bulk CSV/TSV insert is far faster than row-by-row for ClickHouse.
+Let the materialized view take over for new data — as rows land in metering, mv_metering_hourly keeps metering_hourly current automatically. No need to separately migrate old metering_history rows unless you want that historical hourly data preserved too (if so, just insert into metering_hourly using avgState/countState the same way).
+Tune the TTL — 90 days above is a placeholder; set it to whatever raw-data retention makes sense for you, since the hourly rollup keeps summarized history indefinitely regardless.
+Adjust sensor/location writes — if these ever get updated in place (e.g., renaming a sensor), note that MergeTree updates are done via ALTER TABLE ... UPDATE mutations, which are async and heavier than a normal SQL UPDATE. For tables this small it's not a real concern, but worth knowing.
