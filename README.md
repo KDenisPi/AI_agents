@@ -165,14 +165,13 @@ so it restarts independently of either collector.
   can be fired on demand, with `--voice`/`--graph` opting into those
   extras where the endpoint supports them.
 
-![Touchscreen client screenshot](ai_client/web/screenshot.png)
+![Touchscreen client screenshot](ai_client/web/screen_layout.png)
 
 *The `ai_client/web/` touchscreen client running against a live agent -
 header with title, Audio/Graph toggles and the answer status; sidebar with
 Reports (Current state, Battery status), Extended reports (Outside today,
 Weather/Power source selector, Last hours, date-range query); main area
-with the graph/equalizer and the answer text. Drop a PNG at
-`ai_client/web/screenshot.png` to fill this in.*
+with the graph/equalizer and the answer text.*
 
 ### Configuration (`Config.py`, `collector.env.example`)
 Every component reads a single `Config`, built from the environment
