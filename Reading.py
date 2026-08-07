@@ -17,6 +17,7 @@ METRIC_IDS = {
     "battery": 5,
     "pressure": 6,
     "illuminance": 7,
+    "power": 8,
 }
 
 
