@@ -1,7 +1,11 @@
 # Third-party packages used by this project, for a Python 3.12 container.
 # Unpinned - pip resolves the latest version at build time.
 
-mcp
+# Pinned: the low-level mcp.server.Server decorator API (@server.list_tools()
+# / @server.call_tool(), used in McpWeather.py) must match. An unpinned build
+# picked up an incompatible version whose Server lacked list_tools; 1.28.x is
+# the API this code is written against.
+mcp==1.28.1
 starlette
 uvicorn
 python-dotenv
@@ -11,6 +15,7 @@ sounddevice
 vosk
 aiohttp
 pymysql
+clickhouse-connect
 python-dateutil
 matplotlib
 
