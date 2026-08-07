@@ -39,6 +39,10 @@ class Config:
     ch_password: str = ""
     ch_database: str = "weather"
     ch_secure: bool = False
+    # Read-only credentials for ai_agent's MetricStorageClickhouse - it never
+    # writes, same split as db_user_readonly on the MariaDB side.
+    ch_user_readonly: str = "weather_read"
+    ch_password_readonly: str = ""
 
     # --- Hubitat Maker API ---
     hubitat_ip: str = "192.168.1.214"
@@ -191,6 +195,10 @@ class Config:
             ch_password=text("CH_PASSWORD", defaults.ch_password),
             ch_database=text("CH_DATABASE", defaults.ch_database),
             ch_secure=flag("CH_SECURE", defaults.ch_secure),
+            ch_user_readonly=text("CH_USER_READONLY", defaults.ch_user_readonly),
+            ch_password_readonly=text(
+                "CH_PASSWORD_READONLY", defaults.ch_password_readonly
+            ),
             hubitat_ip=text("HUBITAT_IP", defaults.hubitat_ip),
             hubitat_app_id=text("HUBITAT_APP_ID", defaults.hubitat_app_id),
             hubitat_token=text("HUBITAT_TOKEN", defaults.hubitat_token),

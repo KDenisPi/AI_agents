@@ -1,6 +1,7 @@
 """
-AI agent - ties the storage layer (ai_agent_storage.py) to the chat models
-built from Config's Ollama settings. model_small/model_large go through
+AI agent - ties the storage layer (ai_agent_storage_clickhouse.py, the
+ClickHouse reader) to the chat models built from Config's Ollama settings.
+model_small/model_large go through
 OllamaClient, which speaks the OpenAI-compatible /v1/chat/completions API
 and so can point at Ollama or a llama.cpp server; model_text_to_voice
 still talks to Ollama specifically (see text_to_voice.py).
@@ -18,7 +19,8 @@ from pathlib import Path
 
 from Config import Config
 from OllamaClient import OllamaClient, session_id_for
-from ai_agent_storage import MetricStorage, format_current, format_history, format_stats
+from ai_agent_storage import format_current, format_history, format_stats
+from ai_agent_storage_clickhouse import MetricStorageClickhouse
 from ai_server_graph import GraphError, MetricGrapher
 from text_to_voice import TextToVoice
 
@@ -70,7 +72,7 @@ class AiAgent:
         runs stay in the prompt and it grows with each one. Call
         model_small.reset() when the history stops being worth carrying.
         """
-        self.storage = MetricStorage(config)
+        self.storage = MetricStorageClickhouse(config)
         # One id per model, not one per agent: both clients would otherwise
         # write the same history file. The role suffix keeps them apart even
         # when ollama_model_1 and ollama_model_2 name the same model.
