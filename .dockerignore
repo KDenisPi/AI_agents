@@ -5,3 +5,4 @@ __pycache__/
 logs/
 ollama_sessions/
 *.log
+data/clickhouse/
