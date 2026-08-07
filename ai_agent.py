@@ -64,6 +64,14 @@ class AiAgent:
     prompt_template_outside_for_today = "Summarize outside sensor readings for today in 2-3 short sentences total. \
 	Temperature: one sentence with range and peak only (provide time when it happened). Humidity: one short clause with just the range, no trend detail. \
 	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.:\n"
+    # {hours} filled in per call. Fed min/max/avg/count per device (location),
+    # same as prompt_template_history_outside_last_hours above - told so, and
+    # given the same "no notes or closing remarks" guard, plus an explicit
+    # steer toward "typical" and "peak" since that's the pair of numbers a
+    # power question actually wants (avg and max), not every field in
+    # MetricStats.
+    prompt_template_history_power_last_hours = "Summarize power usage readings for the last {hours} hours in 2-3 short sentences total. \
+	For each device, report its typical (average) usage and its peak. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
     prompt_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
@@ -171,6 +179,38 @@ class AiAgent:
 
         prompt = (
             self.prompt_template_history_outside_last_hours.format(hours=hours)
+            + format_stats(stats)
+        )
+        return self.model_small.chat_once(prompt), graphs
+
+    def summarize_history_power_last_hours(
+        self, hours: int, graph: bool = False
+    ) -> tuple[str, dict[str, Path]]:
+        """Ask model_small for a plain-language summary of power usage over
+        the last `hours` - min/max/avg/count per device (location), via
+        get_stats_last_hours("power", hours). Unlike
+        summarize_history_outside_last_hours, this is a single-metric call
+        (no metrics list), so storage returns the classic location -> stats
+        shape rather than nesting by metric. Returns (summary, graphs) -
+        graphs is empty unless graph=True, in which case it holds one PNG
+        with one line per device (get_history_last_hours()'s location ->
+        list[HistoryPoint] shape feeds plot_metrics() straight into
+        plot_history(), which is already "one figure, one line per
+        location")."""
+        stats = self.storage.get_stats_last_hours("power", hours)
+        if not stats:
+            return self.prompt_no_data, {}
+
+        graphs: dict[str, Path] = {}
+        if graph:
+            history = self.storage.get_history_last_hours("power", hours)
+            try:
+                graphs = self._grapher.plot_metrics(history, metric="power")
+            except GraphError:
+                pass  # nothing to plot - the text summary still goes out
+
+        prompt = (
+            self.prompt_template_history_power_last_hours.format(hours=hours)
             + format_stats(stats)
         )
         return self.model_small.chat_once(prompt), graphs

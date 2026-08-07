@@ -52,6 +52,16 @@ Client to AI_AGENT:
         voice, graph and callback all work exactly as they do on
         /api/outside_today.
 
+    GET /api/power_last_hours[?request_id=<id>][&hours=<n>][&voice[=<name>]][&graph][&callback]
+        Same 200/503/500/400 contract as /api/outside_last_hours. Summarizes
+        the last <hours> of power usage per device
+        (AiAgent.summarize_history_power_last_hours, i.e.
+        MetricStorage.get_stats_last_hours("power", hours)). hours defaults
+        to 24. voice, graph and callback all work exactly as they do on
+        /api/outside_last_hours. graph, when given, is a single PNG with one
+        line per device on the same axes, not one per metric - there is only
+        the one metric (power) here, split across devices instead.
+
 AI_AGENT to Client (config.ai_client_callback_url, POST - only for a
 request that asked for it with &callback, see above):
     POST /api/response
@@ -69,13 +79,15 @@ request that asked for it with &callback, see above):
     spoken answer is a nice-to-have, and losing it is no reason to throw
     away an answer that already cost a model call.
 
-    graphs is null unless the request asked for one (only /api/outside_today
-    and /api/outside_last_hours do today). When it did, it is
-    {"<metric>": "<url>", ...} - one link
+    graphs is null unless the request asked for one (only /api/outside_today,
+    /api/outside_last_hours and /api/power_last_hours do today). When it
+    did, it is {"<metric>": "<url>", ...} - one link
     per metric, served from /graphs (see config.graph_output_dir), built
     and pruned the same way audio_url is. {} means graph was requested but
     there was nothing plottable (see ai_server_graph.GraphError) - the text
-    answer still went out.
+    answer still went out. /api/power_last_hours always comes back with at
+    most one entry ("power") since it has only the one metric, with every
+    device as a line on that single graph rather than one graph per device.
 
 GET /api/poll[?request_id=<id>]
     Alternative to the callback above, for a client with no way to accept
@@ -570,6 +582,93 @@ def make_app(config: Config) -> Starlette:
         if wants_callback:
             await _post_callback(config, payload)
 
+    async def handle_power_last_hours(request: Request) -> Response:
+        _log_request(request)
+        started = time.monotonic()
+        request_id = request.query_params.get("request_id")
+        # Same reasoning as handle_current above.
+        wants_audio = "voice" in request.query_params
+        voice = request.query_params.get("voice") or None
+        wants_graph = "graph" in request.query_params
+        wants_callback = "callback" in request.query_params
+        # Same reasoning as handle_outside_last_hours above.
+        hours_param = request.query_params.get("hours")
+        if hours_param is None:
+            hours = 24
+        else:
+            try:
+                hours = int(hours_param)
+            except ValueError:
+                return JSONResponse({"error": "hours must be an integer"}, status_code=400)
+            if hours <= 0:
+                return JSONResponse({"error": "hours must be positive"}, status_code=400)
+        try:
+            reachable = await asyncio.to_thread(_ollama_reachable, config)
+        except Exception as e:
+            logger.exception("Could not check Ollama availability")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        if not reachable:
+            return JSONResponse({"error": "model not available"}, status_code=503)
+
+        tracked_id = _track_pending(request.app, request_id)
+        _spawn(
+            _run_power_last_hours(
+                config,
+                request.app,
+                tracked_id,
+                request_id,
+                hours,
+                wants_audio,
+                voice,
+                wants_graph,
+                wants_callback,
+                started,
+                # Captured here because the callback is built long after the
+                # request object is gone.
+                str(request.base_url),
+            )
+        )
+        body = {"accepted": True}
+        if request_id:
+            body["request_id"] = request_id
+        return JSONResponse(body, status_code=200)
+
+    async def _run_power_last_hours(
+        config: Config,
+        app: Starlette,
+        tracked_id: str,
+        request_id: str | None,
+        hours: int,
+        wants_audio: bool,
+        voice: str | None,
+        wants_graph: bool,
+        wants_callback: bool,
+        started: float,
+        base_url: str,
+    ) -> None:
+        agent = app.state.agent
+        try:
+            text, graphs = await asyncio.to_thread(
+                agent.summarize_history_power_last_hours, hours, wants_graph
+            )
+            payload = {
+                "text": text,
+                "audio_url": None,
+                "graphs": _graph_urls(config, graphs, base_url) if wants_graph else None,
+            }
+        except Exception as e:
+            logger.exception("summarize_history_power_last_hours failed")
+            payload = {"error": str(e)}
+        else:
+            if wants_audio:
+                await _add_audio(config, agent, payload, text, voice, base_url)
+        if request_id:
+            payload["request_id"] = request_id
+        _store_result(app, tracked_id, payload)
+        _log_done("/api/power_last_hours", request_id, payload, started)
+        if wants_callback:
+            await _post_callback(config, payload)
+
     async def handle_poll(request: Request) -> Response:
         tracked_id = request.app.state.poll_request_id
         if tracked_id is None:
@@ -605,6 +704,7 @@ def make_app(config: Config) -> Starlette:
             Route("/api/current_battery", handle_current_battery, methods=["GET"]),
             Route("/api/outside_today", handle_outside_today, methods=["GET"]),
             Route("/api/outside_last_hours", handle_outside_last_hours, methods=["GET"]),
+            Route("/api/power_last_hours", handle_power_last_hours, methods=["GET"]),
             Route("/api/poll", handle_poll, methods=["GET"]),
             Mount(
                 AUDIO_URL_PREFIX,
