@@ -6,8 +6,27 @@ curl https://clickhouse.com/cli | sh
 #run server
 docker run -d --name=iot-clickhouse-server -p 8123:8123 -p 9000:9000 --ulimit nofile=262144:262144 -v "$PWD/logs/clickhouse:/var/log/clickhouse-server" -v "$PWD/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server:latest
 
+#allow connection for default user from another computers
+docker exec -it iot-clickhouse-server sh -c 'cat > /etc/clickhouse-server/users.d/default-user.xml << "EOF"
+<clickhouse>
+  <users>
+    <default>
+      <password>MyStrongPasword</password>        
+      <networks>
+        <ip>::1</ip>
+        <ip>127.0.0.1</ip>
+        <ip>192.168.1.0/24</ip>
+      </networks>
+    </default>
+  </users>
+</clickhouse>
+EOF'
+docker restart iot-clickhouse-server
+
 #connect to server using application
 docker exec -it iot-clickhouse-server clickhouse-client
+#from another computer
+clickhouse-client --host <server-ip-or-hostname> --port 9000
 
 #from client
 ALTER USER default IDENTIFIED WITH sha256_password BY 'your-strong-password';
