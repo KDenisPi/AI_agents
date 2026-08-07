@@ -8,8 +8,9 @@ const POLL_INTERVAL_MS = 2000;
 // roughly doubles response time, so this stays generous.
 const CLIENT_TIMEOUT_MS = 180000;
 // Persisted across restarts (see loadSettings/saveSettings): the Audio and
-// Graph toggles plus the "Last hours" combo value. From/To are left out -
-// an absolute date range saved once would go stale after a few days.
+// Graph toggles, the "Last hours" combo value, and the Weather/Power data
+// source. From/To are left out - an absolute date range saved once would
+// go stale after a few days.
 const SETTINGS_STORAGE_KEY = "ai-agent-client-settings";
 
 const statusEl = document.getElementById("status");
@@ -24,6 +25,8 @@ const fromDateInput = document.getElementById("from-date");
 const toDateInput = document.getElementById("to-date");
 const audioToggle = document.getElementById("toggle-audio");
 const graphToggle = document.getElementById("toggle-graph");
+const datasourceSelect = document.getElementById("datasource-select");
+const datasourceButtons = Array.from(datasourceSelect.querySelectorAll(".seg-btn"));
 
 const metricPanel = document.getElementById("metric-panel");
 const metricSelect = document.getElementById("metric-select");
@@ -38,9 +41,13 @@ const audioPlayer = document.getElementById("audio-player");
 
 const lockable = [
   btnCurrent, btnBattery, btnOutsideToday, btnLastHours, hoursSelect, btnRange,
-  fromDateInput, toDateInput, audioToggle, graphToggle,
+  fromDateInput, toDateInput, audioToggle, graphToggle, ...datasourceButtons,
 ];
 
+// Which endpoint "Last hours" and "Run range query" hit - "weather" for
+// /api/outside_last_hours, "power" for /api/power_last_hours. "Outside
+// today" is unaffected - there is no power equivalent of that endpoint.
+let dataSource = "weather";
 let locked = false;
 let requestStartedAt = 0;
 let pollTimer = null;
@@ -71,9 +78,24 @@ function init() {
   btnRange.addEventListener("click", requestRange);
   metricSelect.addEventListener("change", () => showMetric(metricSelect.value));
 
+  datasourceButtons.forEach((btn) => {
+    btn.addEventListener("click", () => setDataSource(btn.dataset.source));
+  });
+
   audioToggle.addEventListener("change", saveSettings);
   graphToggle.addEventListener("change", saveSettings);
   hoursSelect.addEventListener("change", saveSettings);
+}
+
+// ---- Weather/Power data-source selector ----
+
+function setDataSource(source) {
+  if (locked || source === dataSource) return;
+  dataSource = source;
+  datasourceButtons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.source === source);
+  });
+  saveSettings();
 }
 
 function isoDateLocal(d) {
@@ -104,6 +126,14 @@ function applySettings(settings) {
   if (settings.hours && hoursSelect.querySelector(`option[value="${settings.hours}"]`)) {
     hoursSelect.value = String(settings.hours);
   }
+  // Same guard as hours: only apply a source that's actually one of the
+  // buttons rendered above.
+  if (settings.dataSource && datasourceButtons.some((btn) => btn.dataset.source === settings.dataSource)) {
+    dataSource = settings.dataSource;
+    datasourceButtons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.source === dataSource);
+    });
+  }
 }
 
 function saveSettings() {
@@ -114,6 +144,7 @@ function saveSettings() {
         audio: audioToggle.checked,
         graph: graphToggle.checked,
         hours: hoursSelect.value,
+        dataSource,
       })
     );
   } catch (err) {
@@ -168,6 +199,13 @@ function requestOutsideToday() {
   startRequest(buildUrl("/api/outside_today", params), requestId);
 }
 
+// "Last hours" and "Run range query" both read from whichever endpoint the
+// Weather/Power selector currently points at - same hours-based query
+// shape either way, just a different metric behind it.
+function lastHoursEndpoint() {
+  return dataSource === "power" ? "/api/power_last_hours" : "/api/outside_last_hours";
+}
+
 function requestLastHours() {
   if (locked) return;
   const requestId = buildRequestId();
@@ -175,7 +213,7 @@ function requestLastHours() {
   const params = { request_id: requestId, hours };
   if (audioToggle.checked) params.voice = true;
   if (graphToggle.checked) params.graph = true;
-  startRequest(buildUrl("/api/outside_last_hours", params), requestId);
+  startRequest(buildUrl(lastHoursEndpoint(), params), requestId);
 }
 
 function requestRange() {
@@ -195,12 +233,12 @@ function requestRange() {
   const params = { request_id: requestId, hours };
   if (audioToggle.checked) params.voice = true;
   if (graphToggle.checked) params.graph = true;
-  startRequest(buildUrl("/api/outside_last_hours", params), requestId);
+  startRequest(buildUrl(lastHoursEndpoint(), params), requestId);
 }
 
 // The server has no dedicated from/to endpoint - only /api/outside_last_hours
-// (hours before now). Whole-day span, inclusive of both endpoints, converted
-// to hours so "Run range query" can reuse that endpoint.
+// and /api/power_last_hours (hours before now). Whole-day span, inclusive of
+// both endpoints, converted to hours so "Run range query" can reuse them.
 function hoursForRange(fromStr, toStr) {
   const from = new Date(`${fromStr}T00:00:00`);
   const to = new Date(`${toStr}T00:00:00`);

@@ -103,6 +103,12 @@ body {
   color: var(--header-title);
 }
 
+#header-toggles .status-box {
+  min-width: 150px;
+  min-height: 36px;
+  white-space: nowrap;
+}
+
 /* ---- Layout ---- */
 
 #layout {
@@ -238,6 +244,39 @@ body {
 .field-row input[type="date"]:disabled {
   color: var(--btn-text-disabled);
   border-color: var(--btn-border-disabled);
+}
+
+.segmented {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  min-height: 32px;
+  border: 1px solid var(--btn-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.seg-btn {
+  flex: 1 1 50%;
+  border: none;
+  background: var(--panel-bg);
+  color: var(--btn-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--btn-border);
+}
+
+.seg-btn.active {
+  background: var(--btn-bg);
+}
+
+.seg-btn:disabled {
+  color: var(--btn-text-disabled);
+  cursor: default;
 }
 
 .toggle-text {

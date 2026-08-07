@@ -10,20 +10,21 @@
   <header id="header">
     <h1 id="title">Home weather agent</h1>
     <div id="header-toggles">
-      <label class="header-toggle" title="Current state, Battery status, Outside today, Outside last, Range">
+      <label class="header-toggle" title="Current state, Battery status, Outside today, Last hours, Range">
         <span class="toggle-text">Audio</span>
         <span class="switch">
           <input type="checkbox" id="toggle-audio">
           <span class="slider"></span>
         </span>
       </label>
-      <label class="header-toggle" title="Outside today, Outside last, Range">
+      <label class="header-toggle" title="Outside today, Last hours, Range">
         <span class="toggle-text">Graph</span>
         <span class="switch">
           <input type="checkbox" id="toggle-graph">
           <span class="slider"></span>
         </span>
       </label>
+      <div id="answer-status" class="status-box idle">Ready</div>
     </div>
     <span id="status">Ready</span>
   </header>
@@ -39,8 +40,15 @@
       <section class="panel">
         <h2>Time range</h2>
         <button id="btn-outside-today" class="req-btn">Outside today</button>
+        <div class="field-row">
+          <label>Data:</label>
+          <div class="segmented" id="datasource-select">
+            <button type="button" class="seg-btn active" data-source="weather">Weather</button>
+            <button type="button" class="seg-btn" data-source="power">Power</button>
+          </div>
+        </div>
         <div class="row">
-          <button id="btn-last-hours" class="req-btn grow">Outside last</button>
+          <button id="btn-last-hours" class="req-btn grow">Last hours</button>
           <select id="hours-select" class="hours-select"></select>
         </div>
         <button id="btn-range" class="req-btn full">Run range query</button>
@@ -57,10 +65,6 @@
       <section class="panel" id="metric-panel" hidden>
         <h2>Metric</h2>
         <select id="metric-select"></select>
-      </section>
-
-      <section class="panel">
-        <div id="answer-status" class="status-box idle">Ready</div>
       </section>
     </aside>
 
