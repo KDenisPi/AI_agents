@@ -40,3 +40,11 @@ class Reading:
     @property
     def metric_id(self) -> int:
         return METRIC_IDS[self.metric]
+
+    @property
+    def is_power(self) -> bool:
+        """True for the 'power' metric, which the ClickHouse collector
+        samples on its own fast cadence and routes to metering_power (see
+        WeatherDbClickhouse / CollectorClickhouse). Everything else is a
+        'weather' metric."""
+        return self.metric == "power"

@@ -11,5 +11,6 @@ sounddevice
 vosk
 aiohttp
 pymysql
+clickhouse-connect
 python-dateutil
 matplotlib

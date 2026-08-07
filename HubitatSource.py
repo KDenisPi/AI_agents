@@ -27,6 +27,7 @@ ATTRIBUTE_METRICS = {
     "carbonDioxide": "CO2",
     "pressure": "pressure",
     "illuminance": "illuminance",
+    "power": "power",
 }
 
 

@@ -26,6 +26,20 @@ class Config:
     db_user_readonly: str = "weather_read"
     db_password_readonly: str = ""
 
+    # --- ClickHouse (schema from db/clickhouse/weather_clickhouse.sql) ---
+    # Used by the ClickHouse collector (WeatherDbClickhouse /
+    # CollectorClickhouse) only - the MariaDB fields above still drive the
+    # legacy Collector.py and ai_agent's MetricStorage. ch_port is the HTTP
+    # interface (8123), which clickhouse-connect speaks; ch_secure=True
+    # switches it to HTTPS.
+    ch_host: str = "192.168.1.57"
+    ch_port: int = 8123
+    ch_user: str = "weather"
+    # No secret defaults in source - real value lives in .env (gitignored).
+    ch_password: str = ""
+    ch_database: str = "weather"
+    ch_secure: bool = False
+
     # --- Hubitat Maker API ---
     hubitat_ip: str = "192.168.1.214"
     hubitat_app_id: str = "7"
@@ -93,6 +107,10 @@ class Config:
 
     # --- Scheduling ---
     interval_seconds: int = 600
+    # The ClickHouse collector samples the 'power' metric on its own faster
+    # cadence, into metering_power - see CollectorClickhouse. Ignored by the
+    # legacy MariaDB Collector.py, which has a single interval.
+    power_interval_seconds: int = 10
 
     # IANA zone name used only to decide what "today" means (today_outside()'s
     # 08:00-21:00 window) - metering.mdatatime stays UTC, as collected (see
@@ -167,6 +185,12 @@ class Config:
             db_name=text("DB_NAME", defaults.db_name),
             db_user_readonly=text("DB_USER_READONLY", defaults.db_user_readonly),
             db_password_readonly=text("DB_PASSWORD_READONLY", defaults.db_password_readonly),
+            ch_host=text("CH_HOST", defaults.ch_host),
+            ch_port=number("CH_PORT", defaults.ch_port),
+            ch_user=text("CH_USER", defaults.ch_user),
+            ch_password=text("CH_PASSWORD", defaults.ch_password),
+            ch_database=text("CH_DATABASE", defaults.ch_database),
+            ch_secure=flag("CH_SECURE", defaults.ch_secure),
             hubitat_ip=text("HUBITAT_IP", defaults.hubitat_ip),
             hubitat_app_id=text("HUBITAT_APP_ID", defaults.hubitat_app_id),
             hubitat_token=text("HUBITAT_TOKEN", defaults.hubitat_token),
@@ -210,6 +234,9 @@ class Config:
             ),
             ai_agent_public_url=text("AI_AGENT_PUBLIC_URL", defaults.ai_agent_public_url),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
+            power_interval_seconds=number(
+                "POWER_INTERVAL_SECONDS", defaults.power_interval_seconds
+            ),
             local_timezone=text("LOCAL_TIMEZONE", defaults.local_timezone),
             dry_run=flag("DRY_RUN", defaults.dry_run),
             default_location_id=number("DEFAULT_LOCATION_ID", defaults.default_location_id),

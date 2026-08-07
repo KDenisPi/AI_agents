@@ -1,0 +1,29 @@
+# ClickHouse variant of weather-collector.service - runs CollectorClickhouse.py
+# instead of Collector.py. Run only one of the two collectors against a given
+# store; they are independent units.
+#
+# Install:
+#   sudo cp weather-collector-clickhouse.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now weather-collector-clickhouse
+#   journalctl -u weather-collector-clickhouse -f
+#
+# Adjust User/WorkingDirectory/ExecStart if the checkout lives elsewhere.
+
+[Unit]
+Description=Weather and Hubitat sensor collector (ClickHouse)
+# ClickHouse is reached over the network (CH_HOST), so this is ordering only
+# - the collector retries on the next cycle if it is briefly unreachable.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=denis
+WorkingDirectory=/home/denis/projects/AI_agents
+ExecStart=/usr/bin/python3 /home/denis/projects/AI_agents/CollectorClickhouse.py
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
