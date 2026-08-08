@@ -341,16 +341,26 @@ class MetricStorage:
         start: datetime,
         end: datetime,
         locations: list[str] | None = None,
+        by_sensor: bool = False,
     ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
         """Every reading between start and end (inclusive), oldest first.
         Pass a single metric name for the classic shape, keyed by location;
         pass a list to pull several metrics in one query instead of one
         round trip each - the result is then keyed by location then metric,
         same shape as get_current()'s. Defaults to every location with data
-        in that window; pass `locations` to narrow it."""
+        in that window; pass `locations` to narrow it (this still filters
+        by location even when by_sensor=True).
+
+        by_sensor=True keys the result by sensor name instead of location.
+        Several distinctly-named sensors can share one location (e.g.
+        several power meters in the same room), so location grouping blends
+        their readings into a single series - by_sensor keeps them apart.
+        Used for power history, where that blending would otherwise merge
+        unrelated devices into one graph line."""
         metrics = [metric] if isinstance(metric, str) else metric
+        key_col = "s.name" if by_sensor else "l.location"
         query = (
-            "SELECT l.location AS location, m.metric AS metric, "
+            f"SELECT {key_col} AS grp, m.metric AS metric, "
             "CONVERT_TZ(me.mdatatime, 'UTC', %s) AS taken_at, "
             "me.value AS value "
             "FROM metering me "
@@ -369,30 +379,34 @@ class MetricStorage:
             placeholders = ", ".join(["%s"] * len(locations))
             query += f" AND l.location IN ({placeholders})"
             args.extend(locations)
-        query += " ORDER BY l.location ASC, m.metric ASC, me.mdatatime ASC"
+        query += " ORDER BY grp ASC, m.metric ASC, me.mdatatime ASC"
 
         rows = self._query(query, tuple(args))
         if isinstance(metric, str):
             history: dict[str, list[HistoryPoint]] = {}
             for row in rows:
-                history.setdefault(row["location"], []).append(
+                history.setdefault(row["grp"], []).append(
                     HistoryPoint(taken_at=row["taken_at"], value=row["value"])
                 )
             return history
 
         history_multi: dict[str, dict[str, list[HistoryPoint]]] = {}
         for row in rows:
-            history_multi.setdefault(row["location"], {}).setdefault(
+            history_multi.setdefault(row["grp"], {}).setdefault(
                 row["metric"], []
             ).append(HistoryPoint(taken_at=row["taken_at"], value=row["value"]))
         return history_multi
 
     def get_history_last_hours(
-        self, metric: str | list[str], hours: int, locations: list[str] | None = None
+        self,
+        metric: str | list[str],
+        hours: int,
+        locations: list[str] | None = None,
+        by_sensor: bool = False,
     ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
         """get_history over the last `hours`, ending now."""
         end = datetime.now()
-        return self.get_history(metric, end - timedelta(hours=hours), end, locations)
+        return self.get_history(metric, end - timedelta(hours=hours), end, locations, by_sensor)
 
     def get_history_outside_last_hours(
         self, metric: str | list[str], hours: int

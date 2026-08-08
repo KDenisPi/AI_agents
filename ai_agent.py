@@ -193,17 +193,19 @@ class AiAgent:
         (no metrics list), so storage returns the classic location -> stats
         shape rather than nesting by metric. Returns (summary, graphs) -
         graphs is empty unless graph=True, in which case it holds one PNG
-        with one line per device (get_history_last_hours()'s location ->
-        list[HistoryPoint] shape feeds plot_metrics() straight into
-        plot_history(), which is already "one figure, one line per
-        location")."""
+        with one line per device. get_history_last_hours() is called with
+        by_sensor=True for this since several distinctly-named power
+        sensors can share one location - grouping by location like the
+        text summary above would blend their readings into a single line,
+        which get_history_last_hours()'s -> list[HistoryPoint] shape feeds
+        plot_metrics() straight into plot_history() to render as."""
         stats = self.storage.get_stats_last_hours("power", hours)
         if not stats:
             return self.prompt_no_data, {}
 
         graphs: dict[str, Path] = {}
         if graph:
-            history = self.storage.get_history_last_hours("power", hours)
+            history = self.storage.get_history_last_hours("power", hours, by_sensor=True)
             try:
                 graphs = self._grapher.plot_metrics(history, metric="power")
             except GraphError:

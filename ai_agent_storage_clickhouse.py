@@ -283,20 +283,30 @@ class MetricStorageClickhouse:
         start: datetime,
         end: datetime,
         locations: list[str] | None = None,
+        by_sensor: bool = False,
     ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
         """Every reading between start and end (inclusive), oldest first.
         Pass a single metric name for the classic shape, keyed by location;
         pass a list to pull several metrics at once, keyed by location then
         metric, same shape as get_current()'s. Defaults to every location
-        with data in that window; pass `locations` to narrow it."""
+        with data in that window; pass `locations` to narrow it (this still
+        filters by location even when by_sensor=True).
+
+        by_sensor=True keys the result by sensor name instead of location.
+        Several distinctly-named sensors can share one location (e.g.
+        several power meters in the same room), so location grouping blends
+        their readings into a single series - by_sensor keeps them apart.
+        Used for power history, where that blending would otherwise merge
+        unrelated devices into one graph line."""
         metrics = [metric] if isinstance(metric, str) else metric
+        key_col = "s.name" if by_sensor else "l.location"
 
         single = isinstance(metric, str)
         history: dict[str, list[HistoryPoint]] = {}
         history_multi: dict[str, dict[str, list[HistoryPoint]]] = {}
         for table, metric_filter in _plan_tables(metrics):
             query = (
-                "SELECT l.location AS location, m.metric AS metric, "
+                f"SELECT {key_col} AS grp, m.metric AS metric, "
                 "toTimeZone(me.mdatatime, {tz:String}) AS taken_at, "
                 "me.value AS value "
                 f"FROM {table} me "
@@ -305,7 +315,7 @@ class MetricStorageClickhouse:
                 "JOIN location l ON l.locid = s.location_locid "
                 "WHERE me.mdatatime BETWEEN {start:DateTime} AND {end:DateTime}"
                 + _filters(metric_filter, locations) +
-                " ORDER BY l.location ASC, m.metric ASC, me.mdatatime ASC"
+                " ORDER BY grp ASC, m.metric ASC, me.mdatatime ASC"
             )
             parameters: dict = {"tz": self._config.local_timezone, "start": start, "end": end}
             if metric_filter:
@@ -315,19 +325,23 @@ class MetricStorageClickhouse:
             for row in self._query(query, parameters):
                 point = HistoryPoint(taken_at=row["taken_at"], value=row["value"])
                 if single:
-                    history.setdefault(row["location"], []).append(point)
+                    history.setdefault(row["grp"], []).append(point)
                 else:
-                    history_multi.setdefault(row["location"], {}).setdefault(
+                    history_multi.setdefault(row["grp"], {}).setdefault(
                         row["metric"], []
                     ).append(point)
         return history if single else history_multi
 
     def get_history_last_hours(
-        self, metric: str | list[str], hours: int, locations: list[str] | None = None
+        self,
+        metric: str | list[str],
+        hours: int,
+        locations: list[str] | None = None,
+        by_sensor: bool = False,
     ) -> dict[str, list[HistoryPoint]] | dict[str, dict[str, list[HistoryPoint]]]:
         """get_history over the last `hours`, ending now."""
         end = datetime.now()
-        return self.get_history(metric, end - timedelta(hours=hours), end, locations)
+        return self.get_history(metric, end - timedelta(hours=hours), end, locations, by_sensor)
 
     def get_history_outside_last_hours(
         self, metric: str | list[str], hours: int
