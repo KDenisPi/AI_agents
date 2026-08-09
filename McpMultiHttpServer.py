@@ -26,6 +26,7 @@ from starlette.routing import Mount, Route
 
 from Config import Config
 from McpWeather import McpWeatherServer
+from McpHubitat import McpHubitatServer
 
 def make_mcp_asgi_app(server: Server, base_path: str) -> tuple[Route, Mount]:
     """Wrap an MCP Server into Starlette routes mounted under base_path."""
@@ -63,7 +64,7 @@ config = Config.from_env()
 if config.log_file == Config.log_file:  # LOG_FILE not overridden via env
     config.log_file = "logs/mcp_server.log"
 config.configure_logging()
-servers = [McpWeatherServer(config)]
+servers = [McpWeatherServer(config), McpHubitatServer(config)]
 
 # ---- Combine everything into one Starlette app on one port ----
 routes = []

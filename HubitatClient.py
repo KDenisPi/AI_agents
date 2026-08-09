@@ -149,6 +149,38 @@ class HubitatClient:
         logger.error("Device %s has no attribute '%s'", device_id, attribute)
         return None
 
+    def get_device_events(self, device_id: str) -> list[dict]:
+        """Recent event history for a device.
+
+        Empty list if the hub could not be reached."""
+        return self._get(f"devices/{device_id}/events") or []
+
+    def get_device_commands(self, device_id: str) -> list[dict]:
+        """Commands a device supports.
+
+        Empty list if the hub could not be reached."""
+        return self._get(f"devices/{device_id}/commands") or []
+
+    def get_device_capabilities(self, device_id: str) -> list:
+        """Capabilities a device supports.
+
+        Empty list if the hub could not be reached."""
+        return self._get(f"devices/{device_id}/capabilities") or []
+
+    def get_device_attribute(self, device_id: str, attribute: str):
+        """Current value of a single named attribute, via the Maker API's
+        dedicated attribute endpoint - unlike get_attribute() above, which
+        instead reads the value out of get_device()'s full attributes list.
+
+        None if the hub could not be reached or the attribute is unknown."""
+        return self._get(f"devices/{device_id}/attribute/{attribute}")
+
+    def list_hub_variables(self) -> list[dict]:
+        """All hub variables defined on this hub.
+
+        Empty list if the hub could not be reached."""
+        return self._get("hubvariables") or []
+
     def send_command(self, device_id: str, command: str, value=None):
         """Send a command to a device, optionally with a secondary value (e.g. setLevel, 50).
 
