@@ -64,14 +64,20 @@ class AiAgent:
     prompt_template_outside_for_today = "Summarize outside sensor readings for today in 2-3 short sentences total. \
 	Temperature: one sentence with range and peak only (provide time when it happened). Humidity: one short clause with just the range, no trend detail. \
 	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.:\n"
-    # {hours} filled in per call. Fed min/max/avg/count per device (location),
-    # same as prompt_template_history_outside_last_hours above - told so, and
-    # given the same "no notes or closing remarks" guard, plus an explicit
-    # steer toward "typical" and "peak" since that's the pair of numbers a
-    # power question actually wants (avg and max), not every field in
-    # MetricStats.
+    # {hours} filled in per call. Fed min/max/avg/count per device (sensor
+    # name, not location - several power sensors can share one location, see
+    # summarize_history_power_last_hours), same as
+    # prompt_template_history_outside_last_hours above - told so, and given
+    # the same "no notes or closing remarks" guard, plus an explicit steer
+    # toward "typical" and "peak" since that's the pair of numbers a power
+    # question actually wants (avg and max), not every field in MetricStats.
+    # The "only devices listed below" / "exact names" lines guard against a
+    # failure mode seen with the small model: given a single blended-device
+    # data line but asked for "each device", it invented plausible-looking
+    # extra devices (e.g. "Light Bulb", "Computer") instead of reporting
+    # just what the data actually contained.
     prompt_template_history_power_last_hours = "Summarize power usage readings for the last {hours} hours in 2-3 short sentences total. \
-	For each device, report its typical (average) usage and its peak. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
+	Report one line per device, using the exact device name as given below - do not rename, translate, or invent devices. Only cover devices listed below; if only one is listed, report only that one. For each device, report its typical (average) usage and its peak. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
     prompt_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
@@ -187,19 +193,20 @@ class AiAgent:
         self, hours: int, graph: bool = False
     ) -> tuple[str, dict[str, Path]]:
         """Ask model_small for a plain-language summary of power usage over
-        the last `hours` - min/max/avg/count per device (location), via
-        get_stats_last_hours("power", hours). Unlike
+        the last `hours` - min/max/avg/count per device, via
+        get_stats_last_hours("power", hours, by_sensor=True). Unlike
         summarize_history_outside_last_hours, this is a single-metric call
-        (no metrics list), so storage returns the classic location -> stats
-        shape rather than nesting by metric. Returns (summary, graphs) -
-        graphs is empty unless graph=True, in which case it holds one PNG
-        with one line per device. get_history_last_hours() is called with
-        by_sensor=True for this since several distinctly-named power
-        sensors can share one location - grouping by location like the
-        text summary above would blend their readings into a single line,
-        which get_history_last_hours()'s -> list[HistoryPoint] shape feeds
-        plot_metrics() straight into plot_history() to render as."""
-        stats = self.storage.get_stats_last_hours("power", hours)
+        (no metrics list), so storage returns the classic key -> stats shape
+        rather than nesting by metric. by_sensor=True keys that by sensor
+        name rather than location, since several distinctly-named power
+        sensors can share one location - location grouping would blend
+        their readings into one bucket, which is both wrong for the
+        text summary and what previously caused the model to invent
+        devices that don't exist (see prompt_template_history_power_last_hours).
+        Returns (summary, graphs) - graphs is empty unless graph=True, in
+        which case it holds one PNG with one line per device, from the same
+        by_sensor grouping via get_history_last_hours()."""
+        stats = self.storage.get_stats_last_hours("power", hours, by_sensor=True)
         if not stats:
             return self.prompt_no_data, {}
 

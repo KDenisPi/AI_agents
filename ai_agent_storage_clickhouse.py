@@ -210,21 +210,32 @@ class MetricStorageClickhouse:
         self._inside_locations = inside
 
     def get_stats(
-        self, metric: str | list[str], period: timedelta, locations: list[str] | None = None
+        self,
+        metric: str | list[str],
+        period: timedelta,
+        locations: list[str] | None = None,
+        by_sensor: bool = False,
     ) -> dict[str, MetricStats] | dict[str, dict[str, MetricStats]]:
         """Min/max/avg/count over the last `period`, ending now. Pass a
         single metric name for the classic shape, keyed by location; pass a
         list to pull several metrics at once, keyed by location then metric,
         same shape as get_current()'s. Defaults to every location with data
-        in that window; pass `locations` to narrow it. A location/metric with
-        no readings in the window is simply absent from the result."""
+        in that window; pass `locations` to narrow it (this still filters by
+        location even when by_sensor=True). A location/metric with no
+        readings in the window is simply absent from the result.
+
+        by_sensor=True keys the result by sensor name instead of location -
+        see get_history() for why (several distinctly-named sensors, e.g.
+        power meters, can share one location, which would otherwise blend
+        their stats into one bucket)."""
         metrics = [metric] if isinstance(metric, str) else metric
         since = datetime.now() - period
+        key_col = "s.name" if by_sensor else "l.location"
 
         by_location: dict[str, dict[str, MetricStats]] = {}
         for table, metric_filter in _plan_tables(metrics):
             query = (
-                "SELECT l.location AS location, m.metric AS metric, "
+                f"SELECT {key_col} AS grp, m.metric AS metric, "
                 "min(me.value) AS min, max(me.value) AS max, "
                 "avg(me.value) AS avg, count() AS count "
                 f"FROM {table} me "
@@ -233,7 +244,7 @@ class MetricStorageClickhouse:
                 "JOIN location l ON l.locid = s.location_locid "
                 "WHERE me.mdatatime >= {since:DateTime}"
                 + _filters(metric_filter, locations) +
-                " GROUP BY l.location, m.metric"
+                f" GROUP BY {key_col}, m.metric"
             )
             parameters: dict = {"since": since}
             if metric_filter:
@@ -243,7 +254,7 @@ class MetricStorageClickhouse:
             for row in self._query(query, parameters):
                 if not row["count"]:
                     continue
-                by_location.setdefault(row["location"], {})[row["metric"]] = MetricStats(
+                by_location.setdefault(row["grp"], {})[row["metric"]] = MetricStats(
                     metric=row["metric"],
                     min=row["min"],
                     max=row["max"],
@@ -260,10 +271,14 @@ class MetricStorageClickhouse:
         return by_location
 
     def get_stats_last_hours(
-        self, metric: str | list[str], hours: int, locations: list[str] | None = None
+        self,
+        metric: str | list[str],
+        hours: int,
+        locations: list[str] | None = None,
+        by_sensor: bool = False,
     ) -> dict[str, MetricStats] | dict[str, dict[str, MetricStats]]:
         """get_stats over the last `hours`, ending now."""
-        return self.get_stats(metric, timedelta(hours=hours), locations)
+        return self.get_stats(metric, timedelta(hours=hours), locations, by_sensor)
 
     def get_stats_last_days(
         self, metric: str | list[str], days: int, locations: list[str] | None = None
