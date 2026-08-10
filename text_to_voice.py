@@ -191,8 +191,7 @@ def split_text(text: str, limit: int = MAX_CHUNK_CHARS) -> list[str]:
             chunks.append(pending)
             pending = ""
 
-    for sentence in _SENTENCE_END.split(text.strip()):
-        sentence = sentence.strip()
+    for sentence in split_sentences(text):
         if not sentence:
             continue
 
