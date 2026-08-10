@@ -447,8 +447,9 @@ DEMO_TEXT = [
     "Hello. The outside temperature is 27 degrees.",
     "Hello. The outside temperature is 27 degrees.",
 ]
-# One simultaneous instance per demo text, so the two can't drift out of sync.
-DEMO_INSTANCES = len(DEMO_TEXT)
+# Independent of len(DEMO_TEXT): a pool smaller than the text list queues
+# the extra calls instead of running everything at once.
+DEMO_MAX_WORKERS = 4
 
 
 def _demo_run(index: int, config) -> tuple[int, Path | None, dict, float, str | None]:
@@ -473,10 +474,9 @@ def demo():
     config = Config.from_env()
     config.configure_logging()
 
-    with ThreadPoolExecutor(max_workers=DEMO_INSTANCES) as pool:
-        results = pool.map(
-            _demo_run, range(DEMO_INSTANCES), [config] * DEMO_INSTANCES
-        )
+    count = len(DEMO_TEXT)
+    with ThreadPoolExecutor(max_workers=DEMO_MAX_WORKERS) as pool:
+        results = pool.map(_demo_run, range(count), [config] * count)
 
         for index, path, stats, wall_time, error in results:
             if error is not None:
