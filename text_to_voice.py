@@ -166,6 +166,15 @@ def _to_codebooks(codes: list[int], device: str) -> list[torch.Tensor]:
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
 
+def split_sentences(text: str) -> list[str]:
+    """Break `text` into individual sentences on sentence-ending punctuation.
+
+    Not used anywhere yet - prepared for a possible later switch to one
+    synthesize() request per sentence, run simultaneously.
+    """
+    return [s for s in (piece.strip() for piece in _SENTENCE_END.split(text.strip())) if s]
+
+
 def split_text(text: str, limit: int = MAX_CHUNK_CHARS) -> list[str]:
     """Break `text` into pieces small enough for one synthesize call.
 
