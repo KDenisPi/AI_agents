@@ -25,6 +25,7 @@ import re
 import threading
 import time
 import wave
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -359,7 +360,11 @@ class TextToVoice:
         return audio.squeeze().float().cpu().numpy()
 
     def synthesize(
-        self, text: str, path: str | Path | None = None, voice: str | None = None
+        self,
+        text: str,
+        path: str | Path | None = None,
+        voice: str | None = None,
+        stats: dict | None = None,
     ) -> Path:
         """Speak `text` into a .wav and return where it was written.
 
@@ -367,6 +372,10 @@ class TextToVoice:
         joined, so the answer isn't cut off. Defaults to a timestamped file
         in the output directory; pass `path` to choose one. Raises
         TextToVoiceError if the model returned no usable audio tokens.
+
+        Pass `stats` (an empty dict) to have it filled in with timing and
+        token counts - useful for comparing concurrent calls against each
+        other. Left alone by default.
         """
         voice = voice or self.voice
         started = time.perf_counter()
@@ -411,7 +420,43 @@ class TextToVoice:
             elapsed, seconds / elapsed if elapsed else 0, generating,
             vocoding, _vocoder()[1], path,
         )
+
+        if stats is not None:
+            stats.update(
+                chunks=len(chunks),
+                tokens=frames * TOKENS_PER_FRAME,
+                audio_seconds=seconds,
+                elapsed=elapsed,
+                generating=generating,
+                vocoding=vocoding,
+            )
         return path
+
+
+DEMO_TEXT = [
+    "Hello. The outside temperature is 27 degrees.",
+    "Hello. The outside temperature is 27 degrees.",
+    "Hello. The outside temperature is 27 degrees.",
+    "Hello. The outside temperature is 27 degrees.",
+]
+# One simultaneous instance per demo text, so the two can't drift out of sync.
+DEMO_INSTANCES = len(DEMO_TEXT)
+
+
+def _demo_run(index: int, config) -> tuple[int, Path | None, dict, float, str | None]:
+    """One simultaneous synthesize() call for demo(). A fresh TextToVoice
+    per call, matching independent concurrent requests rather than one
+    instance shared across threads."""
+    voice = TextToVoice(
+        config.ollama_url, config.ollama_model_text_to_voice, voice=config.ollama_voice
+    )
+    stats: dict = {}
+    started = time.perf_counter()
+    try:
+        path = voice.synthesize(DEMO_TEXT[index], stats=stats)
+    except Exception as e:  # noqa: BLE001 - reported per-instance, not raised
+        return index, None, stats, time.perf_counter() - started, str(e)
+    return index, path, stats, time.perf_counter() - started, None
 
 
 def demo():
@@ -420,10 +465,21 @@ def demo():
     config = Config.from_env()
     config.configure_logging()
 
-    voice = TextToVoice(
-        config.ollama_url, config.ollama_model_text_to_voice, voice=config.ollama_voice
-    )
-    print("Wrote", voice.synthesize("Hello. The outside temperature is 27 degrees."))
+    with ThreadPoolExecutor(max_workers=DEMO_INSTANCES) as pool:
+        results = pool.map(
+            _demo_run, range(DEMO_INSTANCES), [config] * DEMO_INSTANCES
+        )
+
+        for index, path, stats, wall_time, error in results:
+            if error is not None:
+                print(f"[{index}] failed after {wall_time:.2f}s: {error}")
+                continue
+            print(
+                f"[{index}] wrote {path} in {wall_time:.2f}s wall "
+                f"({stats['tokens']} tokens, {stats['chunks']} chunk(s), "
+                f"{stats['elapsed']:.2f}s total, {stats['generating']:.2f}s "
+                f"generating, {stats['vocoding']:.2f}s vocoding)"
+            )
 
 
 if __name__ == "__main__":
