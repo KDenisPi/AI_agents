@@ -475,19 +475,32 @@ def demo():
     config.configure_logging()
 
     count = len(DEMO_TEXT_1)
+    started = time.perf_counter()
+    generating = vocoding = 0.0
+    failed = 0
     with ThreadPoolExecutor(max_workers=DEMO_MAX_WORKERS) as pool:
         results = pool.map(_demo_run, range(count), [config] * count)
 
         for index, path, stats, wall_time, error in results:
             if error is not None:
+                failed += 1
                 print(f"[{index}] failed after {wall_time:.2f}s: {error}")
                 continue
+            generating += stats["generating"]
+            vocoding += stats["vocoding"]
             print(
                 f"[{index}] wrote {path} in {wall_time:.2f}s wall "
                 f"({stats['tokens']} tokens, {stats['chunks']} chunk(s), "
                 f"{stats['elapsed']:.2f}s total, {stats['generating']:.2f}s "
                 f"generating, {stats['vocoding']:.2f}s vocoding)"
             )
+
+    elapsed = time.perf_counter() - started
+    print(
+        f"Total: {count} item(s), {failed} failed, {elapsed:.2f}s wall "
+        f"(sum {generating:.2f}s generating, {vocoding:.2f}s vocoding across "
+        f"{DEMO_MAX_WORKERS} worker(s))"
+    )
 
 
 if __name__ == "__main__":
