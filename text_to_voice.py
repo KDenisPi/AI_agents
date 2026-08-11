@@ -267,6 +267,7 @@ class TextToVoice:
         timeout: float = 180,
         retention_hours: float = DEFAULT_RETENTION_HOURS,
         keep_alive: str = "30m",
+        max_workers: int = 4,
     ):
         self.url = url.rstrip("/")
         self._model = model
@@ -286,6 +287,10 @@ class TextToVoice:
         # leaving the model to reload from scratch - a multi-second cost
         # paid again on the next call, not something this process can cache.
         self.keep_alive = keep_alive
+        # Chunks are independent model calls (see synthesize()), so they can
+        # run concurrently instead of one after another - this bounds how
+        # many are ever in flight against the Ollama host at once.
+        self.max_workers = max_workers
 
         self._output_dir = Path(output_dir)
         self._output_dir.mkdir(parents=True, exist_ok=True)
@@ -373,12 +378,18 @@ class TextToVoice:
                 audio = model.decode(_to_codebooks(codes, device))
         return audio.squeeze().float().cpu().numpy()
 
+    def _generate_timed(self, chunk: str, voice: str) -> tuple[list[int], float]:
+        mark = time.perf_counter()
+        codes = self._generate(chunk, voice)
+        return codes, time.perf_counter() - mark
+
     def synthesize(
         self,
         text: str,
         path: str | Path | None = None,
         voice: str | None = None,
         stats: dict | None = None,
+        max_workers: int | None = None,
     ) -> Path:
         """Speak `text` into a .wav and return where it was written.
 
@@ -386,6 +397,13 @@ class TextToVoice:
         joined, so the answer isn't cut off. Defaults to a timestamped file
         in the output directory; pass `path` to choose one. Raises
         TextToVoiceError if the model returned no usable audio tokens.
+
+        Chunks are independent Ollama calls, so up to `max_workers` of them
+        (self.max_workers by default) run at once instead of paying each
+        chunk's generation time in series - decoding stays one at a time
+        (see _vocoder_lock) since it is cheap by comparison and torch
+        modules are not safe to call concurrently. Results are joined back
+        in chunk order regardless of which finishes generating first.
 
         Pass `stats` (an empty dict) to have it filled in with timing and
         token counts - useful for comparing concurrent calls against each
@@ -404,13 +422,16 @@ class TextToVoice:
         # Timed apart so the log says which half the time went to: the model
         # generating tokens on the Ollama host, or this process vocoding them.
         # They answer different questions - one is a remote GPU's problem, the
-        # other is this machine's.
-        segments, frames, generating, vocoding = [], 0, 0.0, 0.0
-        for chunk in chunks:
-            mark = time.perf_counter()
-            codes = self._generate(chunk, voice)
-            generating += time.perf_counter() - mark
+        # other is this machine's. generating is a sum of per-chunk time, so
+        # it can exceed wall-clock elapsed once chunks overlap - it still
+        # answers "how much model time did this cost", just not serially.
+        workers = max(1, min(max_workers or self.max_workers, len(chunks)))
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            generated = list(pool.map(self._generate_timed, chunks, [voice] * len(chunks)))
 
+        segments, frames, generating, vocoding = [], 0, 0.0, 0.0
+        for codes, duration in generated:
+            generating += duration
             frames += len(codes) // TOKENS_PER_FRAME
             mark = time.perf_counter()
             segments.append(self._decode(codes))

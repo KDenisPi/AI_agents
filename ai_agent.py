@@ -118,6 +118,7 @@ class AiAgent:
             voice=config.ollama_voice,
             output_dir=config.voice_output_dir,
             retention_hours=config.voice_retention_hours,
+            max_workers=config.voice_max_workers,
         )
         self._grapher = MetricGrapher(config.graph_output_dir, config.graph_retention_hours)
 

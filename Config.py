@@ -78,6 +78,10 @@ class Config:
     # has fetched them, and at roughly 1.5 MB per 30s answer the directory
     # would otherwise grow without limit. 0 keeps everything.
     voice_retention_hours: int = 24
+    # How many chunks of one answer TextToVoice.synthesize() sends to Ollama
+    # at once - independent calls, so concurrency here shortens multi-chunk
+    # answers instead of paying each chunk's generation time in series.
+    voice_max_workers: int = 4
     # Rough token budget (~4 chars/token) for the verbatim history
     # OllamaClient.chat() sends before folding older turns into a summary,
     # and how many of the most recent messages stay verbatim once it does.
@@ -222,6 +226,7 @@ class Config:
             voice_retention_hours=number(
                 "VOICE_RETENTION_HOURS", defaults.voice_retention_hours
             ),
+            voice_max_workers=number("VOICE_MAX_WORKERS", defaults.voice_max_workers),
             ollama_max_history_tokens=number(
                 "OLLAMA_MAX_HISTORY_TOKENS", defaults.ollama_max_history_tokens
             ),
