@@ -441,15 +441,15 @@ class TextToVoice:
         return path
 
 
-DEMO_TEXT = [
-    "Hello. The outside temperature is 27 degrees.",
-    "Hello. The outside temperature is 27 degrees.",
-    "Hello. The outside temperature is 27 degrees.",
-    "Hello. The outside temperature is 27 degrees.",
-]
-# Independent of len(DEMO_TEXT): a pool smaller than the text list queues
+DEMO_TEXT_FULL = "Interior room has a temperature of 26.45°C and relative humidity of 58%. \
+	Exterior temperature is slightly cooler at 20.96°C, with similar humidity.\
+	Interior room's conditions are about 5.49°C warmer than outside."
+
+DEMO_TEXT_1 = split_sentences(DEMO_TEXT_FULL)
+
+# Independent of len(DEMO_TEXT_1): a pool smaller than the text list queues
 # the extra calls instead of running everything at once.
-DEMO_MAX_WORKERS = 4
+DEMO_MAX_WORKERS = 4 if len(DEMO_TEXT_1) >= 4 else len(DEMO_TEXT_1)
 
 
 def _demo_run(index: int, config) -> tuple[int, Path | None, dict, float, str | None]:
@@ -462,7 +462,7 @@ def _demo_run(index: int, config) -> tuple[int, Path | None, dict, float, str | 
     stats: dict = {}
     started = time.perf_counter()
     try:
-        path = voice.synthesize(DEMO_TEXT[index], stats=stats)
+        path = voice.synthesize(DEMO_TEXT_1[index], stats=stats)
     except Exception as e:  # noqa: BLE001 - reported per-instance, not raised
         return index, None, stats, time.perf_counter() - started, str(e)
     return index, path, stats, time.perf_counter() - started, None
@@ -474,7 +474,7 @@ def demo():
     config = Config.from_env()
     config.configure_logging()
 
-    count = len(DEMO_TEXT)
+    count = len(DEMO_TEXT_1)
     with ThreadPoolExecutor(max_workers=DEMO_MAX_WORKERS) as pool:
         results = pool.map(_demo_run, range(count), [config] * count)
 
