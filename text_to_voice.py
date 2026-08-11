@@ -474,6 +474,8 @@ def demo():
     config = Config.from_env()
     config.configure_logging()
 
+    logger.info("Start")
+
     count = len(DEMO_TEXT_1)
     started = time.perf_counter()
     generating = vocoding = 0.0
@@ -501,6 +503,7 @@ def demo():
         f"(sum {generating:.2f}s generating, {vocoding:.2f}s vocoding across "
         f"{DEMO_MAX_WORKERS} worker(s))"
     )
+    logger.info("Finish")
 
 
 if __name__ == "__main__":
