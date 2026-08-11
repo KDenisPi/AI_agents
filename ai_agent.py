@@ -60,7 +60,8 @@ class AiAgent:
     # given the same "no notes or closing remarks" guard as the today
     # template below: a small model handed a wall of numbers with no such
     # guard tends to append a chatty offer to help instead of stopping.
-    prompt_template_history_outside_last_hours = "Summarize outside sensor min/max/avg readings for the last {hours} hours in 2-3 short sentences total. No notes or closing remarks.\n"
+    prompt_template_history_outside_last_hours = "Summarize outside sensor min/max/avg readings for the last {hours} hours in 2-3 short sentences total. \
+	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
     prompt_template_outside_for_today = "Summarize outside sensor readings for today in 2-3 short sentences total. \
 	Temperature: one sentence with range and peak only (provide time when it happened). Humidity: one short clause with just the range, no trend detail. \
 	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.:\n"
