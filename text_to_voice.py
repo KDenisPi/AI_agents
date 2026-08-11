@@ -266,6 +266,7 @@ class TextToVoice:
         options: dict | None = None,
         timeout: float = 180,
         retention_hours: float = DEFAULT_RETENTION_HOURS,
+        keep_alive: str = "30m",
     ):
         self.url = url.rstrip("/")
         self._model = model
@@ -281,6 +282,10 @@ class TextToVoice:
         # Generating even a short line takes far longer than a chat reply:
         # roughly 84 audio tokens per second of speech.
         self.timeout = timeout
+        # Ollama's own default (5m) is easy to miss between manual runs,
+        # leaving the model to reload from scratch - a multi-second cost
+        # paid again on the next call, not something this process can cache.
+        self.keep_alive = keep_alive
 
         self._output_dir = Path(output_dir)
         self._output_dir.mkdir(parents=True, exist_ok=True)
@@ -347,6 +352,7 @@ class TextToVoice:
                 "raw": True,
                 "stream": False,
                 "options": self.options,
+                "keep_alive": self.keep_alive,
             },
             timeout=self.timeout,
         )
