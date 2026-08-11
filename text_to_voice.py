@@ -266,7 +266,7 @@ class TextToVoice:
         options: dict | None = None,
         timeout: float = 180,
         retention_hours: float = DEFAULT_RETENTION_HOURS,
-        keep_alive: str = "30m",
+        keep_alive: str | int = -1,
         max_workers: int = 4,
     ):
         self.url = url.rstrip("/")
@@ -283,9 +283,10 @@ class TextToVoice:
         # Generating even a short line takes far longer than a chat reply:
         # roughly 84 audio tokens per second of speech.
         self.timeout = timeout
-        # Ollama's own default (5m) is easy to miss between manual runs,
-        # leaving the model to reload from scratch - a multi-second cost
-        # paid again on the next call, not something this process can cache.
+        # -1 keeps the model loaded indefinitely, matching how the chat
+        # models (OllamaClient) are kept resident - Ollama's own 5m default
+        # would otherwise unload it between manual/spaced-out runs, paying
+        # a multi-second reload on the next call.
         self.keep_alive = keep_alive
         # Chunks are independent model calls (see synthesize()), so they can
         # run concurrently instead of one after another - this bounds how
