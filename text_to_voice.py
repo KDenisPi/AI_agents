@@ -163,14 +163,14 @@ def _to_codebooks(codes: list[int], device: str) -> list[torch.Tensor]:
     ]
 
 
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+_SENTENCE_END = re.compile(r"(?<=[.,!?])\s+")
 
 
 def split_sentences(text: str) -> list[str]:
-    """Break `text` into individual sentences on sentence-ending punctuation.
-
-    Not used anywhere yet - prepared for a possible later switch to one
-    synthesize() request per sentence, run simultaneously.
+    """Break `text` into individual sentences on sentence-ending punctuation,
+    and also on commas - splitting mid-sentence too, so a short answer with
+    only one or two real sentences still yields more than one piece for
+    synthesize() to generate concurrently.
     """
     return [s for s in (piece.strip() for piece in _SENTENCE_END.split(text.strip())) if s]
 
@@ -178,41 +178,30 @@ def split_sentences(text: str) -> list[str]:
 def split_text(text: str, limit: int = MAX_CHUNK_CHARS) -> list[str]:
     """Break `text` into pieces small enough for one synthesize call.
 
-    Splits on sentence boundaries so the joins land where a speaker would
-    pause anyway; a single sentence longer than `limit` is split on
-    whitespace instead, which is audible but still better than losing it.
+    One chunk per sentence - never merged into fewer, larger ones - so
+    synthesize() can generate independent sentences concurrently instead of
+    paying for one big serial call. A single sentence longer than `limit`
+    is split on whitespace instead, which is audible but still better than
+    losing it.
     """
     chunks: list[str] = []
-    pending = ""
-
-    def flush() -> None:
-        nonlocal pending
-        if pending:
-            chunks.append(pending)
-            pending = ""
-
     for sentence in split_sentences(text):
         if not sentence:
             continue
 
-        if len(sentence) > limit:
-            flush()
-            while len(sentence) > limit:
-                cut = sentence.rfind(" ", 0, limit)
-                if cut <= 0:  # one unbroken run of characters - cut mid-word
-                    cut = limit
-                chunks.append(sentence[:cut].strip())
-                sentence = sentence[cut:].strip()
-            pending = sentence
-        elif not pending:
-            pending = sentence
-        elif len(pending) + 1 + len(sentence) <= limit:
-            pending = f"{pending} {sentence}"
-        else:
-            flush()
-            pending = sentence
+        if len(sentence) <= limit:
+            chunks.append(sentence)
+            continue
 
-    flush()
+        while len(sentence) > limit:
+            cut = sentence.rfind(" ", 0, limit)
+            if cut <= 0:  # one unbroken run of characters - cut mid-word
+                cut = limit
+            chunks.append(sentence[:cut].strip())
+            sentence = sentence[cut:].strip()
+        if sentence:
+            chunks.append(sentence)
+
     return chunks
 
 
@@ -379,10 +368,17 @@ class TextToVoice:
                 audio = model.decode(_to_codebooks(codes, device))
         return audio.squeeze().float().cpu().numpy()
 
-    def _generate_timed(self, chunk: str, voice: str) -> tuple[list[int], float]:
+    def _generate_timed(
+        self, index: int, total: int, chunk: str, voice: str
+    ) -> tuple[list[int], float]:
         mark = time.perf_counter()
         codes = self._generate(chunk, voice)
-        return codes, time.perf_counter() - mark
+        duration = time.perf_counter() - mark
+        logger.info(
+            "  chunk %d/%d (%d char(s)) -> %d token(s) in %.2fs generating",
+            index + 1, total, len(chunk), len(codes), duration,
+        )
+        return codes, duration
 
     def synthesize(
         self,
@@ -427,8 +423,12 @@ class TextToVoice:
         # it can exceed wall-clock elapsed once chunks overlap - it still
         # answers "how much model time did this cost", just not serially.
         workers = max(1, min(max_workers or self.max_workers, len(chunks)))
+        count = len(chunks)
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            generated = list(pool.map(self._generate_timed, chunks, [voice] * len(chunks)))
+            generated = list(pool.map(
+                self._generate_timed,
+                range(count), [count] * count, chunks, [voice] * count,
+            ))
 
         segments, frames, generating, vocoding = [], 0, 0.0, 0.0
         for codes, duration in generated:
