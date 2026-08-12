@@ -1,0 +1,10 @@
+-- Placeholder schema for a first run with no arguments. Point --schema at
+-- your own DDL/description file to use this against a real database.
+CREATE TABLE orders (
+    id INTEGER,
+    customer TEXT,
+    product TEXT,
+    quantity INTEGER,
+    price FLOAT,
+    order_date DATE
+);
