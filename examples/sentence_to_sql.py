@@ -19,13 +19,17 @@ Run:
 
 Every model call's prompt and reply are logged here; OllamaClient's own
 @_timed logging (via the "ollama" logger) adds elapsed time and token
-counts for each call to the same log.
+counts for each call to the same log. Stage 2 (intent -> SQL) additionally
+appends a (prompt, completion, execution outcome) record per run to
+--training-log, meant as raw material for later fine-tuning that model.
 """
 
 import argparse
+import json
 import logging
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Repo has no package layout - reach into the parent dir for OllamaClient.
@@ -66,15 +70,17 @@ def run_stage(client: OllamaClient, stage_name: str, prompt: str) -> str:
     return reply
 
 
-def run_sql(db_path: str, sql: str) -> None:
+def run_sql(db_path: str, sql: str) -> dict:
     """Execute `sql` against a local DuckDB file, if the duckdb package is
     installed - its absence is logged and treated as a normal, expected
-    outcome here rather than an error."""
+    outcome here rather than an error. Returns the outcome (status/error/
+    row_count) so the caller can record it alongside the training example -
+    "unavailable" means the SQL was never checked, not that it's wrong."""
     try:
         import duckdb
     except ImportError:
         logger.warning("duckdb package not installed - skipping execution of:\n%s", sql)
-        return
+        return {"status": "unavailable", "error": None, "row_count": None}
 
     started = time.perf_counter()
     try:
@@ -86,7 +92,7 @@ def run_sql(db_path: str, sql: str) -> None:
             connection.close()
     except Exception as e:
         logger.warning("duckdb(%s) failed in %.2fs: %s", db_path, time.perf_counter() - started, e)
-        return
+        return {"status": "failed", "error": str(e), "row_count": None}
 
     logger.info(
         "duckdb(%s) ok in %.2fs - %d row(s), columns=%s",
@@ -94,6 +100,32 @@ def run_sql(db_path: str, sql: str) -> None:
     )
     for row in rows:
         print(row)
+    return {"status": "success", "error": None, "row_count": len(rows)}
+
+
+def log_training_example(
+    path: str, model: str, prompt: str, completion: str, sql: str, db_result: dict
+) -> None:
+    """Append one stage-2 (prompt, completion) pair to a JSONL file, for use
+    later as fine-tuning data for the stage-2 model. Kept separate from the
+    human-readable log: one self-contained record per line, with the exact
+    prompt actually sent (schema and request already filled in) so it stays
+    reproducible even after the templates change, plus whether the SQL it
+    produced actually ran - a cheap signal for filtering good examples from
+    bad ones once DuckDB is available to check against."""
+    record = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "model": model,
+        "prompt": prompt,
+        "completion": completion,
+        "sql": sql,
+        "db_status": db_result["status"],
+        "db_error": db_result["error"],
+        "row_count": db_result["row_count"],
+    }
+    with open(path, "a") as f:
+        f.write(json.dumps(record) + "\n")
+    logger.info("logged stage2 training example to %s (db_status=%s)", path, db_result["status"])
 
 
 def main() -> None:
@@ -110,8 +142,13 @@ def main() -> None:
     parser.add_argument("--schema", default=str(DEFAULT_SCHEMA), help="DDL/description file for stage 2")
     parser.add_argument("--url", default="http://192.168.1.57:11434", help="Ollama server URL")
     parser.add_argument("--model1", default="llama3.1:8b", help="model for stage 1 (sentence -> intent)")
-    parser.add_argument("--model2", default="qwen3.6", help="model for stage 2 (intent -> SQL)")
+    parser.add_argument("--model2", default="Qwen2.5-Coder", help="model for stage 2 (intent -> SQL)")
     parser.add_argument("--db", default="sentence_to_sql.duckdb", help="local DuckDB file to run the SQL against")
+    parser.add_argument(
+        "--training-log",
+        default="sentence_to_sql_stage2_training.jsonl",
+        help="JSONL file to append stage 2 (prompt, completion, execution outcome) records to",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -126,10 +163,12 @@ def main() -> None:
 
     prompt2 = _fill(context2, answer=intent, schema=schema)
     client2 = OllamaClient(args.url, args.model2)
-    sql = _strip_sql_fence(run_stage(client2, "stage2", prompt2))
+    completion = run_stage(client2, "stage2", prompt2)
+    sql = _strip_sql_fence(completion)
 
     print("\nGenerated SQL:\n" + sql)
-    run_sql(args.db, sql)
+    db_result = run_sql(args.db, sql)
+    log_training_example(args.training_log, args.model2, prompt2, completion, sql, db_result)
 
 
 if __name__ == "__main__":

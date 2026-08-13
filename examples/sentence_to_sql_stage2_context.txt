@@ -3,7 +3,7 @@ You are a SQL generator targeting DuckDB.
 Schema:
 {{SCHEMA}}
 
-Turn the request below into a single DuckDB SQL SELECT statement that
+Turn the JSON structurial request below into a single DuckDB SQL SELECT statement that
 answers it. Reply with ONLY the SQL - no markdown fences, no explanation.
 
 Request: {{ANSWER}}

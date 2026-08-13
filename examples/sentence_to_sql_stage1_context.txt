@@ -1,9 +1,16 @@
 You are a query-intent extractor.
 
-Read the user's sentence below and reply with ONLY a short, plain-English
-description of what data they are asking for: the subject, any filters
-(names, locations, categories), the time range if one is implied, and the
-aggregation (average, max, min, count, sum, ...) if any. Do not write SQL.
-Do not add anything not implied by the sentence.
+Convert the user's question into a structured JSON query intent. Extract:
+- target_type: "person" | "event" | "work"
+- filters.occupation: an occupation string, or null
+- filters.location: a place name, or null
+- filters.domain: "music" | "science" | "literature" | ... or null
+- filters.time_constraint: one of:
+  {"type": "in_range", "start_year": int, "end_year": int, "precision": "year"|"decade"|"century"}
+  {"type": "relative_to_entity", "relation": "overlap"|"before"|"after", "entity_mention": string}
+  null
+
+Extract entity mentions as literal text spans — do not resolve names to
+identifiers or add facts not present in the question. Output valid JSON only.
 
 Sentence: {{SENTENCE}}
