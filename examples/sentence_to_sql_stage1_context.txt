@@ -13,7 +13,10 @@ Convert the user's question into a structured JSON query intent. Extract:
   {"relation": "creates"|"participates_in"|"located_in", "entity_mention": string}
   null
 - filters.compare_entities: one of:
-  {"entities": [string, ...], "relation": "overlap"|"before"|"after", "aspect": "time"}
+  {"entities": [string, ...], "aspect": "time", "relation": "overlap"|"before"|"after"}
+  {"entities": [string, ...], "aspect": "work_count", "relation": "more"|"fewer"|"equal", "work_type": string|null}
+  {"entities": [string, ...], "aspect": "age", "relation": "more"|"fewer"|"equal"}
+  {"entities": [string, ...], "aspect": "location", "relation": "same"|"different"}
   null
 
 Extract entity mentions as literal text spans — do not resolve names to
@@ -75,21 +78,34 @@ FIELD-TO-FILTER MAPPING (stage1 JSON output)
   wrote Symphony No. 5", "actors in Titanic", "scientists who worked on the Manhattan Project"
   (relation "creates" for authorship/composition/invention, "participates_in" for involvement in an
   event, "located_in" for a specific named place). Do not use this for relationships expressed purely
-  in time — use time_constraint.relative_to_entity or filters.compare_entities for those instead.
-  entity_mention is the literal text span naming that work/event/place — do not paraphrase or normalize
-  it (e.g. keep "Symphony number 5" as written, don't rewrite it to "Symphony No. 5"). If the sentence
-  gives no specific named entity, this field is null, even if occupation/domain/location filters are
-  present.
+  in time or as a direct comparison between named entities — use time_constraint.relative_to_entity or
+  filters.compare_entities for those instead. entity_mention is the literal text span naming that
+  work/event/place — do not paraphrase or normalize it (e.g. keep "Symphony number 5" as written,
+  don't rewrite it to "Symphony No. 5"). If the sentence gives no specific named entity, this field is
+  null, even if occupation/domain/location filters are present.
 - filters.compare_entities: use when the sentence directly compares two or more SPECIFIC NAMED entities
-  to each other — e.g. "Did Beethoven and Mahler live at the same time?", "Was the Eiffel Tower built
-  before the Statue of Liberty?" — rather than using one named entity as a fixed anchor for an
-  open-ended list (that case is time_constraint.relative_to_entity instead; see its note above).
-  entities is the literal list of every named entity being compared, in the order mentioned in the
-  sentence — never drop one to keep another. relation/aspect describe what's being compared (aspect
-  is "time" for now; relation reuses the overlap/before/after vocabulary). occupation/domain/location
-  may still be filled in from a shared descriptor in the sentence (e.g. "composers" -> occupation:
-  "composer") for context, but time_constraint should be left null in this case — the comparison
-  itself lives entirely in compare_entities.
+  to each other — rather than using one named entity as a fixed anchor for an open-ended list (that
+  case is time_constraint.relative_to_entity instead; see its note above). entities is the literal
+  list of every named entity being compared, in the order mentioned in the sentence — never drop one
+  to keep another. occupation/domain/location may still be filled in from a shared descriptor
+  explicitly stated in the sentence (e.g. "composers" -> occupation: "composer") — leave them null if
+  the sentence gives no such descriptor, even if it's common knowledge. time_constraint should be left
+  null whenever compare_entities is used — the comparison itself lives entirely in compare_entities.
+  Pick aspect based on what property is being compared, using only the attributes the knowledge base
+  actually has (time, location, and creates/participates_in relationships):
+    - aspect "time": relation is overlap/before/after — chronological comparison of when each entity
+      existed/happened — e.g. "Did Beethoven and Mahler live at the same time?", "Was the Eiffel Tower
+      built before the Statue of Liberty?", "Who was born first, X or Y?"
+    - aspect "work_count": relation is more/fewer/equal, comparing how many matching works each named
+      entity created — e.g. "Who composed more symphonies, X or Y?". work_type is the literal term for
+      the kind of work being counted (e.g. "symphonies"), or null if the sentence doesn't name one
+      (e.g. "Who created more works overall, X or Y?").
+    - aspect "age": relation is more/fewer/equal, comparing how long each named person lived (derived
+      from birth_year/death_year) — e.g. "Who lived longer, X or Y?", "Did X die younger than Y?"
+      Only applies to target_type "person".
+    - aspect "location": relation is same/different, comparing where each named entity is tied to
+      (birthplace for person, event location, work's place of origin) — e.g. "Were X and Y born in
+      the same country?", "Did these two wars happen in the same place?"
 
 EXAMPLES
 
@@ -154,7 +170,46 @@ Sentence: Did composers Beethowen and Mahler live on the same time?
     "domain": "music",
     "time_constraint": null,
     "related_entity": null,
-    "compare_entities": {"entities": ["Beethowen", "Mahler"], "relation": "overlap", "aspect": "time"}
+    "compare_entities": {"entities": ["Beethowen", "Mahler"], "aspect": "time", "relation": "overlap"}
+  }
+}
+
+Sentence: Who composed more symphonies, Beethowen or Mahler?
+{
+  "target_type": "person",
+  "filters": {
+    "occupation": "composer",
+    "location": null,
+    "domain": "music",
+    "time_constraint": null,
+    "related_entity": null,
+    "compare_entities": {"entities": ["Beethowen", "Mahler"], "aspect": "work_count", "relation": "more", "work_type": "symphonies"}
+  }
+}
+
+Sentence: Who lived longer, Beethoven or Mahler?
+{
+  "target_type": "person",
+  "filters": {
+    "occupation": null,
+    "location": null,
+    "domain": null,
+    "time_constraint": null,
+    "related_entity": null,
+    "compare_entities": {"entities": ["Beethoven", "Mahler"], "aspect": "age", "relation": "more"}
+  }
+}
+
+Sentence: Were Beethoven and Mahler born in the same country?
+{
+  "target_type": "person",
+  "filters": {
+    "occupation": null,
+    "location": null,
+    "domain": null,
+    "time_constraint": null,
+    "related_entity": null,
+    "compare_entities": {"entities": ["Beethoven", "Mahler"], "aspect": "location", "relation": "same"}
   }
 }
 
