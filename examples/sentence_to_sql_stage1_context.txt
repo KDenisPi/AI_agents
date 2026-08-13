@@ -13,4 +13,42 @@ Convert the user's question into a structured JSON query intent. Extract:
 Extract entity mentions as literal text spans — do not resolve names to
 identifiers or add facts not present in the question. Output valid JSON only.
 
+Knowledge base schema (Wikidata-style), for grounding sentence -> JSON intent extraction.
+
+ENTITIES (target_type)
+
+1. person — a human individual
+   - occupation: one or more roles/professions (e.g. "physicist", "novelist", "musician")
+   - domain: broad field of activity ("music", "science", "literature", "politics", "sports", ...)
+   - location: birthplace, nationality, or place of residence
+   - time: birth_year, death_year (defines the person's active period)
+
+2. event — a historical or scheduled occurrence
+   - domain: category of event ("war", "election", "festival", "discovery", ...)
+   - location: place where the event happened
+   - time: start_year, end_year (or a single year if instantaneous)
+   - participants: related person entities
+
+3. work — a created output (book, song, film, paper, building, etc.)
+   - domain: genre/field ("literature", "music", "science", ...)
+   - creator: related person entity
+   - location: place of origin or publication
+   - time: creation/publication year
+
+RELATIONSHIPS
+- person --creates--> work
+- person --participates_in--> event
+- work / event --located_in--> location
+
+FIELD-TO-FILTER MAPPING (stage1 JSON output)
+- filters.occupation: only meaningful when target_type = "person"
+- filters.location: person -> birthplace/nationality; event -> where it happened; work -> place of origin
+- filters.domain: applies to any target_type; broad field/genre/category, not a specific occupation
+- filters.time_constraint:
+    - person -> birth_year / death_year
+    - event -> start_year / end_year
+    - work -> creation/publication year
+    - type "in_range": absolute year/decade/century window
+    - type "relative_to_entity": timeframe defined relative to another entity mentioned in the sentence (overlap/before/after), not resolved to a date
+
 Sentence: {{SENTENCE}}
