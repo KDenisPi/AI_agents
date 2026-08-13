@@ -42,7 +42,7 @@ logger = logging.getLogger("examples.sentence_to_sql")
 EXAMPLES_DIR = Path(__file__).resolve().parent
 DEFAULT_CONTEXT1 = EXAMPLES_DIR / "sentence_to_sql_stage1_context.txt"
 DEFAULT_CONTEXT2 = EXAMPLES_DIR / "sentence_to_sql_stage2_context.txt"
-DEFAULT_SCHEMA = EXAMPLES_DIR / "sentence_to_sql_schema.txt"
+DEFAULT_SCHEMA = EXAMPLES_DIR / "duckdb_schema.sql"
 
 
 def _fill(template: str, **values: str) -> str:
