@@ -9,9 +9,17 @@ Convert the user's question into a structured JSON query intent. Extract:
   {"type": "in_range", "start_year": int, "end_year": int, "precision": "year"|"decade"|"century"}
   {"type": "relative_to_entity", "relation": "overlap"|"before"|"after", "entity_mention": string}
   null
+- filters.related_entity: one of:
+  {"relation": "creates"|"participates_in"|"located_in", "entity_mention": string}
+  null
+- filters.compare_entities: one of:
+  {"entities": [string, ...], "relation": "overlap"|"before"|"after", "aspect": "time"}
+  null
 
 Extract entity mentions as literal text spans — do not resolve names to
-identifiers or add facts not present in the question. Output valid JSON only.
+identifiers or add facts not present in the question. Preserve the sentence's exact spelling —
+including apparent typos — in every entity_mention or entities value; do not auto-correct them.
+Output valid JSON only.
 
 Knowledge base schema (Wikidata-style), for grounding sentence -> JSON intent extraction.
 
@@ -29,7 +37,7 @@ ENTITIES (target_type)
    - time: start_year, end_year (or a single year if instantaneous)
    - participants: related person entities
 
-3. work — a created output (book, song, film, paper, building, etc.)
+3. work — a created output (book, song, film, paper, building, invention, discovery, theory, patent, etc.)
    - domain: genre/field ("literature", "music", "science", ...)
    - creator: related person entity
    - location: place of origin or publication
@@ -39,16 +47,115 @@ RELATIONSHIPS
 - person --creates--> work
 - person --participates_in--> event
 - work / event --located_in--> location
+(these three relation names are exactly the values allowed in filters.related_entity.relation)
 
 FIELD-TO-FILTER MAPPING (stage1 JSON output)
 - filters.occupation: only meaningful when target_type = "person"
 - filters.location: person -> birthplace/nationality; event -> where it happened; work -> place of origin
-- filters.domain: applies to any target_type; broad field/genre/category, not a specific occupation
+- filters.domain: applies to any target_type. Use the most specific field/subject/category mentioned
+  in the sentence (e.g. "physics", "jazz", "French literature"), not a broader umbrella term — even
+  when both appear together (e.g. "science inventions in physics" -> domain: "physics", not "science").
+  Only fall back to a broader term when no more specific one is stated in the sentence.
 - filters.time_constraint:
     - person -> birth_year / death_year
     - event -> start_year / end_year
     - work -> creation/publication year
     - type "in_range": absolute year/decade/century window
-    - type "relative_to_entity": timeframe defined relative to another entity mentioned in the sentence (overlap/before/after), not resolved to a date
+    - type "relative_to_entity": timeframe defined relative to exactly ONE fixed named entity mentioned
+      in the sentence (overlap/before/after), used to find an open-ended set of other entities — e.g.
+      "composers before Beethoven" (find all such composers). Not resolved to a date.
+    - century convention: "Nth century" -> start_year = (N-1)*100 + 1, end_year = N*100
+      (so "19th century" = 1801-1900)
+    - decade convention: "the YYYYs" -> start_year = YYYY0, end_year = YYYY9
+      (so "the 1940s" = 1940-1949)
+    - if the sentence directly compares two or more specific named entities to each other instead of
+      using one as a fixed anchor, leave this null and use filters.compare_entities instead.
+- filters.related_entity: use when the sentence identifies the target by its relationship to a specific
+  NAMED work/event/place, rather than by a category, occupation, domain, or time window — e.g. "who
+  wrote Symphony No. 5", "actors in Titanic", "scientists who worked on the Manhattan Project"
+  (relation "creates" for authorship/composition/invention, "participates_in" for involvement in an
+  event, "located_in" for a specific named place). Do not use this for relationships expressed purely
+  in time — use time_constraint.relative_to_entity or filters.compare_entities for those instead.
+  entity_mention is the literal text span naming that work/event/place — do not paraphrase or normalize
+  it (e.g. keep "Symphony number 5" as written, don't rewrite it to "Symphony No. 5"). If the sentence
+  gives no specific named entity, this field is null, even if occupation/domain/location filters are
+  present.
+- filters.compare_entities: use when the sentence directly compares two or more SPECIFIC NAMED entities
+  to each other — e.g. "Did Beethoven and Mahler live at the same time?", "Was the Eiffel Tower built
+  before the Statue of Liberty?" — rather than using one named entity as a fixed anchor for an
+  open-ended list (that case is time_constraint.relative_to_entity instead; see its note above).
+  entities is the literal list of every named entity being compared, in the order mentioned in the
+  sentence — never drop one to keep another. relation/aspect describe what's being compared (aspect
+  is "time" for now; relation reuses the overlap/before/after vocabulary). occupation/domain/location
+  may still be filled in from a shared descriptor in the sentence (e.g. "composers" -> occupation:
+  "composer") for context, but time_constraint should be left null in this case — the comparison
+  itself lives entirely in compare_entities.
+
+EXAMPLES
+
+Sentence: Which science inventions in physics were created in the 19th century?
+{
+  "target_type": "work",
+  "filters": {
+    "occupation": null,
+    "location": null,
+    "domain": "physics",
+    "time_constraint": {"type": "in_range", "start_year": 1801, "end_year": 1900, "precision": "century"},
+    "related_entity": null,
+    "compare_entities": null
+  }
+}
+
+Sentence: Which French composers were active before Beethoven?
+{
+  "target_type": "person",
+  "filters": {
+    "occupation": "composer",
+    "location": "France",
+    "domain": "music",
+    "time_constraint": {"type": "relative_to_entity", "relation": "before", "entity_mention": "Beethoven"},
+    "related_entity": null,
+    "compare_entities": null
+  }
+}
+
+Sentence: What wars happened in Europe during the 1940s?
+{
+  "target_type": "event",
+  "filters": {
+    "occupation": null,
+    "location": "Europe",
+    "domain": "war",
+    "time_constraint": {"type": "in_range", "start_year": 1940, "end_year": 1949, "precision": "decade"},
+    "related_entity": null,
+    "compare_entities": null
+  }
+}
+
+Sentence: Composers who have Symphony number 5
+{
+  "target_type": "person",
+  "filters": {
+    "occupation": "composer",
+    "location": null,
+    "domain": "music",
+    "time_constraint": null,
+    "related_entity": {"relation": "creates", "entity_mention": "Symphony number 5"},
+    "compare_entities": null
+  }
+}
+
+Sentence: Did composers Beethowen and Mahler live on the same time?
+{
+  "target_type": "person",
+  "filters": {
+    "occupation": "composer",
+    "location": null,
+    "domain": "music",
+    "time_constraint": null,
+    "related_entity": null,
+    "compare_entities": {"entities": ["Beethowen", "Mahler"], "relation": "overlap", "aspect": "time"}
+  }
+}
 
 Sentence: {{SENTENCE}}
