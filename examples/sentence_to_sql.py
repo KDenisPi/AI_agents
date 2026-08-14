@@ -43,6 +43,8 @@ EXAMPLES_DIR = Path(__file__).resolve().parent
 DEFAULT_CONTEXT1 = EXAMPLES_DIR / "sentence_to_sql_stage1_context.txt"
 DEFAULT_CONTEXT2 = EXAMPLES_DIR / "sentence_to_sql_stage2_context.txt"
 DEFAULT_SCHEMA = EXAMPLES_DIR / "duckdb_schema.sql"
+DEFAULT_SQL_EXAMPLES = EXAMPLES_DIR / "queries.sql"
+
 
 
 def _fill(template: str, **values: str) -> str:
@@ -63,8 +65,42 @@ def _strip_sql_fence(text: str) -> str:
     return text
 
 
+def _extract_intent_json(text: str) -> str:
+    """Stage 1 is asked for JSON only, but smaller models sometimes wrap it in a
+    prose preamble or a ```json fence. Pull out the first complete top-level
+    {...} object (brace-matched, ignoring braces inside strings) so stage 2
+    receives the intent alone rather than the surrounding chatter. If no balanced
+    object is found, return the text stripped - stage 2 still sees something, and
+    run_stage has already logged the raw reply for inspection."""
+    start = text.find("{")
+    if start == -1:
+        return text.strip()
+    depth = 0
+    in_string = False
+    escaped = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+    return text.strip()
+
+
 def run_stage(client: OllamaClient, stage_name: str, prompt: str) -> str:
-    logger.info("%s prompt:\n%s", stage_name, prompt)
+    logger.debug("%s prompt:\n%s", stage_name, prompt)
     reply = client.chat_once(prompt)
     logger.info("%s reply:\n%s", stage_name, reply)
     return reply
@@ -140,6 +176,7 @@ def main() -> None:
     parser.add_argument("--context1", default=str(DEFAULT_CONTEXT1), help="stage 1 context/template file")
     parser.add_argument("--context2", default=str(DEFAULT_CONTEXT2), help="stage 2 context/template file")
     parser.add_argument("--schema", default=str(DEFAULT_SCHEMA), help="DDL/description file for stage 2")
+    parser.add_argument("--sqlexamples", default=str(DEFAULT_SQL_EXAMPLES), help="SQL examples for stage 2")
     parser.add_argument("--url", default="http://192.168.1.57:11434", help="Ollama server URL")
     parser.add_argument("--model1", default="llama3.1:8b", help="model for stage 1 (sentence -> intent)")
     parser.add_argument("--model2", default="Qwen2.5-Coder", help="model for stage 2 (intent -> SQL)")
@@ -156,12 +193,14 @@ def main() -> None:
     context1 = Path(args.context1).read_text()
     context2 = Path(args.context2).read_text()
     schema = Path(args.schema).read_text()
+    sqlexamples = Path(args.sqlexamples).read_text()
 
     prompt1 = _fill(context1, sentence=args.sentence)
     client1 = OllamaClient(args.url, args.model1)
-    intent = run_stage(client1, "stage1", prompt1)
+    intent = _extract_intent_json(run_stage(client1, "stage1", prompt1))
+    logger.info("stage1 intent (extracted):\n%s", intent)
 
-    prompt2 = _fill(context2, answer=intent, schema=schema)
+    prompt2 = _fill(context2, answer=intent, schema=schema, examples=sqlexamples)
     client2 = OllamaClient(args.url, args.model2)
     completion = run_stage(client2, "stage2", prompt2)
     sql = _strip_sql_fence(completion)

@@ -3,7 +3,31 @@ You are a SQL generator targeting DuckDB.
 Schema:
 {{SCHEMA}}
 
+Examples:
+{{EXAMPLES}}
+
 Turn the JSON structurial request below into a single DuckDB SQL SELECT statement that
 answers it. Reply with ONLY the SQL - no markdown fences, no explanation.
+
+How to read the request JSON:
+- target_type is the kind of entity to return (person / event / work).
+- answer_field is the projection. null -> return the matching entities (label/description).
+  "time" -> return the target's year; "location" -> return the target's place. When it is
+  non-null, SELECT that one attribute instead of the entity rows.
+- filters.name -> the target is a specific named entity: match it by label, e.g.
+  i.label ILIKE '%<name>%'.
+- filters.related_entity {relation, entity_mention} -> a linked entity used to filter/disambiguate.
+  "creates" is the person<->work edge: if target_type is "work", entity_mention is the creator
+  (match through attributes P86/composer or P50/author); if "person", it is the work.
+- The remaining filters (occupation, location, domain, time_constraint, compare_entities) constrain
+  the result set; leave a filter out of the WHERE clause when its value is null.
+
+Keep the query minimal: include a table or join only when it feeds the SELECT list or a
+WHERE/GROUP BY condition. Do not add item_classes/classes (or any other) joins the request does not
+need - an unneeded INNER join can silently drop the answer rows (e.g. a work with no class-closure
+membership). Use the fewest tables that answer the request, and prefer LEFT JOIN for anything not
+being filtered on.
+
+
 
 Request: {{ANSWER}}

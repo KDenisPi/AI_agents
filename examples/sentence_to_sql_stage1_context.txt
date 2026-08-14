@@ -2,6 +2,18 @@ You are a query-intent extractor.
 
 Convert the user's question into a structured JSON query intent. Extract:
 - target_type: "person" | "event" | "work"
+- answer_field: which single attribute of the matched target to return, or null:
+  "time"     -> the target's date (work: creation/publication year; event: start/end year;
+                person: birth/death year)
+  "location" -> the target's place (work: place of origin; event: where it happened;
+                person: birthplace)
+  null       -> return the matching entities themselves (the default)
+  Use a non-null answer_field only when the sentence asks for that attribute as the ANSWER
+  ("When did ...", "What year ...", "Where was ...") rather than using it to filter results.
+- filters.name: the literal text span naming the target entity directly, or null. Use this when
+  the sentence names the specific target itself (e.g. the work "Symphony 5"), as opposed to
+  describing it only by category/occupation/domain/time. This is the target entity; a
+  related_entity instead names a DIFFERENT entity the target is linked to (both can co-occur).
 - filters.occupation: an occupation string, or null
 - filters.location: a place name, or null
 - filters.domain: "music" | "science" | "literature" | ... or null
@@ -21,8 +33,10 @@ Convert the user's question into a structured JSON query intent. Extract:
 
 Extract entity mentions as literal text spans — do not resolve names to
 identifiers or add facts not present in the question. Preserve the sentence's exact spelling —
-including apparent typos — in every entity_mention or entities value; do not auto-correct them.
-Output valid JSON only.
+including apparent typos — in every name, entity_mention, or entities value; do not auto-correct them.
+
+Reply with ONLY the JSON object: no markdown fences, no commentary, no preamble, no trailing notes.
+Begin your reply with "{" and end it with "}".
 
 Knowledge base schema (Wikidata-style), for grounding sentence -> JSON intent extraction.
 
@@ -53,6 +67,17 @@ RELATIONSHIPS
 (these three relation names are exactly the values allowed in filters.related_entity.relation)
 
 FIELD-TO-FILTER MAPPING (stage1 JSON output)
+- answer_field: leave null for the usual case of returning the matching entities (a list of people,
+  events, or works). Set it only when the sentence asks for one attribute OF a target as the answer:
+  "time" for "when / what year", "location" for "where". The attribute it names must NOT also be put
+  in a filter — answer_field is the output, filters are the input. answer_field is most often paired
+  with filters.name (the target is a specific named entity whose date/place you're asked to return),
+  e.g. "When did Beethoven write Symphony 5?" -> answer_field "time".
+- filters.name: only for the entity the question is ABOUT (the target). Set it when the target is a
+  specific named person/event/work rather than a category — "Symphony 5", "the Eiffel Tower",
+  "Albert Einstein". Preserve exact spelling. Leave null when the target is described by
+  occupation/domain/location/time instead of by name (the open-ended retrieval case). Do not confuse
+  it with related_entity: name is the target itself; related_entity is a different, linked entity.
 - filters.occupation: only meaningful when target_type = "person"
 - filters.location: person -> birthplace/nationality; event -> where it happened; work -> place of origin
 - filters.domain: applies to any target_type. Use the most specific field/subject/category mentioned
@@ -73,16 +98,19 @@ FIELD-TO-FILTER MAPPING (stage1 JSON output)
       (so "the 1940s" = 1940-1949)
     - if the sentence directly compares two or more specific named entities to each other instead of
       using one as a fixed anchor, leave this null and use filters.compare_entities instead.
-- filters.related_entity: use when the sentence identifies the target by its relationship to a specific
-  NAMED work/event/place, rather than by a category, occupation, domain, or time window — e.g. "who
-  wrote Symphony No. 5", "actors in Titanic", "scientists who worked on the Manhattan Project"
-  (relation "creates" for authorship/composition/invention, "participates_in" for involvement in an
-  event, "located_in" for a specific named place). Do not use this for relationships expressed purely
-  in time or as a direct comparison between named entities — use time_constraint.relative_to_entity or
-  filters.compare_entities for those instead. entity_mention is the literal text span naming that
-  work/event/place — do not paraphrase or normalize it (e.g. keep "Symphony number 5" as written,
-  don't rewrite it to "Symphony No. 5"). If the sentence gives no specific named entity, this field is
-  null, even if occupation/domain/location filters are present.
+- filters.related_entity: use when the sentence identifies or disambiguates the target by its
+  relationship to ANOTHER specific NAMED work/event/person/place, rather than by a category,
+  occupation, domain, or time window — e.g. "who wrote Symphony No. 5", "actors in Titanic",
+  "scientists who worked on the Manhattan Project" (relation "creates" for authorship/composition/
+  invention, "participates_in" for involvement in an event, "located_in" for a specific named place).
+  entity_mention is whichever endpoint of that relationship is NOT the target: if target_type is
+  "person", "creates" names the work ("Symphony No. 5"); if target_type is "work", "creates" names the
+  PERSON who created it ("Beethoven" -> "the work created by Beethoven"). Do not use this for
+  relationships expressed purely in time or as a direct comparison between named entities — use
+  time_constraint.relative_to_entity or filters.compare_entities for those instead. Do not paraphrase
+  or normalize entity_mention (e.g. keep "Symphony number 5" as written, don't rewrite it to
+  "Symphony No. 5"). If the sentence gives no specific named entity, this field is null, even if
+  occupation/domain/location filters are present.
 - filters.compare_entities: use when the sentence directly compares two or more SPECIFIC NAMED entities
   to each other — rather than using one named entity as a fixed anchor for an open-ended list (that
   case is time_constraint.relative_to_entity instead; see its note above). entities is the literal
@@ -112,7 +140,9 @@ EXAMPLES
 Sentence: Which science inventions in physics were created in the 19th century?
 {
   "target_type": "work",
+  "answer_field": null,
   "filters": {
+    "name": null,
     "occupation": null,
     "location": null,
     "domain": "physics",
@@ -125,7 +155,9 @@ Sentence: Which science inventions in physics were created in the 19th century?
 Sentence: Which French composers were active before Beethoven?
 {
   "target_type": "person",
+  "answer_field": null,
   "filters": {
+    "name": null,
     "occupation": "composer",
     "location": "France",
     "domain": "music",
@@ -138,7 +170,9 @@ Sentence: Which French composers were active before Beethoven?
 Sentence: What wars happened in Europe during the 1940s?
 {
   "target_type": "event",
+  "answer_field": null,
   "filters": {
+    "name": null,
     "occupation": null,
     "location": "Europe",
     "domain": "war",
@@ -151,7 +185,9 @@ Sentence: What wars happened in Europe during the 1940s?
 Sentence: Composers who have Symphony number 5
 {
   "target_type": "person",
+  "answer_field": null,
   "filters": {
+    "name": null,
     "occupation": "composer",
     "location": null,
     "domain": "music",
@@ -161,10 +197,42 @@ Sentence: Composers who have Symphony number 5
   }
 }
 
+Sentence: When did Beethoven write Symphony 5?
+{
+  "target_type": "work",
+  "answer_field": "time",
+  "filters": {
+    "name": "Symphony 5",
+    "occupation": null,
+    "location": null,
+    "domain": "music",
+    "time_constraint": null,
+    "related_entity": {"relation": "creates", "entity_mention": "Beethoven"},
+    "compare_entities": null
+  }
+}
+
+Sentence: Where was Albert Einstein born?
+{
+  "target_type": "person",
+  "answer_field": "location",
+  "filters": {
+    "name": "Albert Einstein",
+    "occupation": null,
+    "location": null,
+    "domain": null,
+    "time_constraint": null,
+    "related_entity": null,
+    "compare_entities": null
+  }
+}
+
 Sentence: Did composers Beethowen and Mahler live on the same time?
 {
   "target_type": "person",
+  "answer_field": null,
   "filters": {
+    "name": null,
     "occupation": "composer",
     "location": null,
     "domain": "music",
@@ -177,7 +245,9 @@ Sentence: Did composers Beethowen and Mahler live on the same time?
 Sentence: Who composed more symphonies, Beethowen or Mahler?
 {
   "target_type": "person",
+  "answer_field": null,
   "filters": {
+    "name": null,
     "occupation": "composer",
     "location": null,
     "domain": "music",
@@ -190,7 +260,9 @@ Sentence: Who composed more symphonies, Beethowen or Mahler?
 Sentence: Who lived longer, Beethoven or Mahler?
 {
   "target_type": "person",
+  "answer_field": null,
   "filters": {
+    "name": null,
     "occupation": null,
     "location": null,
     "domain": null,
@@ -203,7 +275,9 @@ Sentence: Who lived longer, Beethoven or Mahler?
 Sentence: Were Beethoven and Mahler born in the same country?
 {
   "target_type": "person",
+  "answer_field": null,
   "filters": {
+    "name": null,
     "occupation": null,
     "location": null,
     "domain": null,
