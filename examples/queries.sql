@@ -81,7 +81,8 @@ FROM lifespan l
 JOIN items i      USING (qid)
 JOIN occupation o USING (qid)
 JOIN citizenship z USING (qid)
-WHERE z.country ILIKE '%German%'
+-- word-boundary match so a country name isn't caught as a substring of another
+WHERE regexp_matches(z.country, '(?i)\bGerman')
   -- until occupations are mapped to areas, name the scientific ones directly
   AND o.occupation IN ('physicist', 'chemist', 'astronomer', 'mathematician',
                        'naturalist', 'physician', 'alchemist', 'botanist',
@@ -234,14 +235,15 @@ FROM attributes a
 JOIN value_items v ON v.qid = a.value
 JOIN items i       ON i.qid = a.qid
 JOIN lifespan l    ON l.qid = a.qid
-CROSS JOIN anchor
 WHERE a.property = 'P106'          -- occupation
   AND v.label = 'composer'
   -- interval overlap: born on/before the anchor died, died on/after it was born.
   -- This covers all three cases: born within, died within, and lifespans that
-  -- enclose the anchor's entirely (born earlier and died later).
-  AND l.born <= anchor.died
-  AND l.died >= anchor.born
+  -- enclose the anchor's entirely (born earlier and died later). Reference the
+  -- single-row anchor as scalar subqueries so it needs no join and can't be
+  -- dropped when the rest of the query is restructured (adding more filters).
+  AND l.born <= (SELECT died FROM anchor)
+  AND l.died >= (SELECT born FROM anchor)
   -- sanity guard: drop impossible lifespans from bad death-years in the data
   -- (e.g. a 1533 birth paired with a stray 1985 death claim)
   AND l.died - l.born <= 110

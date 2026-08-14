@@ -25,7 +25,10 @@ How to read the request JSON:
   v.qid = a.value, WHERE v.label = '<occupation>'. It is NOT a word in i.label - never write
   i.label LIKE '%composer%'.
 - filters.location -> a place attribute (e.g. P27 country of citizenship, P19 place of birth for a
-  person), resolved through value_items the same way; not a word in i.label.
+  person), resolved through value_items the same way; not a word in i.label. Match the resolved place
+  name with a word-boundary regex - regexp_matches(v.label, '(?i)\b<place>') - rather than
+  ILIKE '%<place>%', so "Russia" does not also match "Prussia"/"Byelorussia" (this still keeps
+  "Russian Empire", "Tsardom of Russia").
 - filters.domain -> the classes.domains tag: JOIN item_classes -> classes, WHERE c.domains LIKE
   '%<domain>%'; not a word in i.label.
 - filters.time_constraint -> a constraint on the target's date(s), which live in the events table
@@ -39,8 +42,10 @@ How to read the request JSON:
       "before" -> died <= anchor.born; "after" -> born >= anchor.died. See the overlap example.
       Many items share a surname, so resolve the anchor to a dated person (born IS NOT NULL) and pick
       the most-documented one (ORDER BY (SELECT count(*) FROM attributes a WHERE a.qid=i.qid) DESC
-      LIMIT 1); never LIMIT 1 on the bare label. When comparing lifespans, guard against impossible
-      ones from bad death-years with AND died - born <= 110.
+      LIMIT 1); never LIMIT 1 on the bare label. Reference the single-row anchor as scalar subqueries
+      - l.born <= (SELECT died FROM anchor) AND l.died >= (SELECT born FROM anchor) - so it needs no
+      join in the main FROM and can't be dropped when you add other filters. When comparing lifespans,
+      guard against impossible ones from bad death-years with AND died - born <= 110.
 - filters.compare_entities -> a direct comparison between the listed named entities; resolve each
   entity's relevant attribute (lifespan, location, or work count) and compare them.
 - Leave any filter whose value is null out of the WHERE clause.
