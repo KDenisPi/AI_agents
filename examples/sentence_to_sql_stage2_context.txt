@@ -37,6 +37,10 @@ How to read the request JSON:
     - type "relative_to_entity": resolve the named anchor's born/died in a CTE first, then compare
       each candidate's lifespan to it - "overlap" -> born <= anchor.died AND died >= anchor.born;
       "before" -> died <= anchor.born; "after" -> born >= anchor.died. See the overlap example.
+      Many items share a surname, so resolve the anchor to a dated person (born IS NOT NULL) and pick
+      the most-documented one (ORDER BY (SELECT count(*) FROM attributes a WHERE a.qid=i.qid) DESC
+      LIMIT 1); never LIMIT 1 on the bare label. When comparing lifespans, guard against impossible
+      ones from bad death-years with AND died - born <= 110.
 - filters.compare_entities -> a direct comparison between the listed named entities; resolve each
   entity's relevant attribute (lifespan, location, or work count) and compare them.
 - Leave any filter whose value is null out of the WHERE clause.

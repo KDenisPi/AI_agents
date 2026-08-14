@@ -216,11 +216,17 @@ WITH lifespan AS (
     FROM events
     GROUP BY qid
 ),
+-- Resolve the anchor to a real dated person. Many items share the surname
+-- (a whole van Beethoven family, plus craters/films/works), so require a birth
+-- year and pick the most-documented match - a stable proxy for "the famous one"
+-- - instead of an arbitrary LIMIT 1 on the bare label.
 anchor AS (
     SELECT l.born, l.died
     FROM items i
     JOIN lifespan l USING (qid)
     WHERE i.label ILIKE '%Beethoven%'
+      AND l.born IS NOT NULL
+    ORDER BY (SELECT count(*) FROM attributes a WHERE a.qid = i.qid) DESC
     LIMIT 1
 )
 SELECT i.label, l.born, l.died
@@ -231,7 +237,12 @@ JOIN lifespan l    ON l.qid = a.qid
 CROSS JOIN anchor
 WHERE a.property = 'P106'          -- occupation
   AND v.label = 'composer'
-  -- interval overlap: born on/before the anchor died, died on/after it was born
+  -- interval overlap: born on/before the anchor died, died on/after it was born.
+  -- This covers all three cases: born within, died within, and lifespans that
+  -- enclose the anchor's entirely (born earlier and died later).
   AND l.born <= anchor.died
   AND l.died >= anchor.born
+  -- sanity guard: drop impossible lifespans from bad death-years in the data
+  -- (e.g. a 1533 birth paired with a stray 1985 death claim)
+  AND l.died - l.born <= 110
 ORDER BY l.born;
