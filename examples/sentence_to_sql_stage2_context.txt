@@ -20,8 +20,26 @@ How to read the request JSON:
 - filters.related_entity {relation, entity_mention} -> a linked entity used to filter/disambiguate.
   "creates" is the person<->work edge: if target_type is "work", entity_mention is the creator
   (match through attributes P86/composer or P50/author); if "person", it is the work.
-- The remaining filters (occupation, location, domain, time_constraint, compare_entities) constrain
-  the result set; leave a filter out of the WHERE clause when its value is null.
+- filters.occupation -> the person's occupation, stored as attribute P106 and resolved through
+  value_items: JOIN attributes a ON a.qid = i.qid AND a.property = 'P106', JOIN value_items v ON
+  v.qid = a.value, WHERE v.label = '<occupation>'. It is NOT a word in i.label - never write
+  i.label LIKE '%composer%'.
+- filters.location -> a place attribute (e.g. P27 country of citizenship, P19 place of birth for a
+  person), resolved through value_items the same way; not a word in i.label.
+- filters.domain -> the classes.domains tag: JOIN item_classes -> classes, WHERE c.domains LIKE
+  '%<domain>%'; not a word in i.label.
+- filters.time_constraint -> a constraint on the target's date(s), which live in the events table
+  (P569 date of birth, P570 date of death for a person; creation/publication year for a work/event).
+  Pull a person's lifespan once in a CTE: max(year) FILTER (WHERE property='P569') AS born, and the
+  same with P570 AS died. Its entity_mention (type relative_to_entity) is a TIME ANCHOR, not a
+  creator - do NOT join P86/P50 for it.
+    - type "in_range": WHERE year BETWEEN start_year AND end_year.
+    - type "relative_to_entity": resolve the named anchor's born/died in a CTE first, then compare
+      each candidate's lifespan to it - "overlap" -> born <= anchor.died AND died >= anchor.born;
+      "before" -> died <= anchor.born; "after" -> born >= anchor.died. See the overlap example.
+- filters.compare_entities -> a direct comparison between the listed named entities; resolve each
+  entity's relevant attribute (lifespan, location, or work count) and compare them.
+- Leave any filter whose value is null out of the WHERE clause.
 
 Keep the query minimal: include a table or join only when it feeds the SELECT list or a
 WHERE/GROUP BY condition. Do not add item_classes/classes (or any other) joins the request does not

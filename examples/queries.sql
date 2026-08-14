@@ -200,3 +200,38 @@ LEFT JOIN events e     ON e.qid = i.qid
 WHERE i.label ILIKE '%Symphony%5%'
   AND comp.label ILIKE '%Beethoven%'
 GROUP BY i.label, comp.label;
+
+
+-- 10. People of an occupation whose lifespan overlaps a named person's.
+--     The stage-1 time_constraint {relative_to_entity, overlap, <anchor>} shape:
+--     resolve the anchor's birth/death years first, then keep candidates whose
+--     own lifespan intersects it. Occupation is attribute P106 (attributes ->
+--     value_items), NOT a word in the item label. P569 = date of birth,
+--     P570 = date of death. For "before" use l.died <= anchor.born; for "after"
+--     use l.born >= anchor.died.
+WITH lifespan AS (
+    SELECT qid,
+           max(year) FILTER (WHERE property = 'P569') AS born,
+           max(year) FILTER (WHERE property = 'P570') AS died
+    FROM events
+    GROUP BY qid
+),
+anchor AS (
+    SELECT l.born, l.died
+    FROM items i
+    JOIN lifespan l USING (qid)
+    WHERE i.label ILIKE '%Beethoven%'
+    LIMIT 1
+)
+SELECT i.label, l.born, l.died
+FROM attributes a
+JOIN value_items v ON v.qid = a.value
+JOIN items i       ON i.qid = a.qid
+JOIN lifespan l    ON l.qid = a.qid
+CROSS JOIN anchor
+WHERE a.property = 'P106'          -- occupation
+  AND v.label = 'composer'
+  -- interval overlap: born on/before the anchor died, died on/after it was born
+  AND l.born <= anchor.died
+  AND l.died >= anchor.born
+ORDER BY l.born;
