@@ -11,7 +11,10 @@ answers it. Reply with ONLY the SQL - no markdown fences, no explanation.
 
 How to read the request JSON:
 - target_type is the kind of entity to return (person / event / work).
-- answer_field is the projection. null -> return the matching entities (label/description).
+- answer_field is the projection. null -> return the matching entities. Name a person by
+  coalesce(i.label, i.label_ru) - some items have only a non-English label - and when the query
+  aggregates (string_agg/min over a person's several attribute rows) GROUP BY i.qid, never
+  GROUP BY i.label (a NULL or shared label merges distinct people into one blank-named row).
   "time" -> return the target's year; "location" -> return the target's place. When it is
   non-null, SELECT that one attribute instead of the entity rows.
 - filters.name -> the target is a specific named entity: match it by label, replacing the internal
@@ -48,7 +51,11 @@ How to read the request JSON:
       guard against impossible ones from bad death-years with AND died - born <= 110.
 - filters.compare_entities -> a direct comparison between the listed named entities; resolve each
   entity's relevant attribute (lifespan, location, or work count) and compare them.
-- Leave any filter whose value is null out of the WHERE clause.
+- Apply a condition for EVERY filter whose value is non-null, and only those. The example queries
+  show how to express each filter type - they are patterns to combine, not templates to copy whole.
+  When the request has several filters (e.g. occupation AND location AND time_constraint), the query
+  must constrain on all of them; never copy the nearest example and silently drop a filter it doesn't
+  happen to show. Leave any filter whose value is null out of the WHERE clause.
 
 Keep the query minimal: include a table or join only when it feeds the SELECT list or a
 WHERE/GROUP BY condition. Do not add item_classes/classes (or any other) joins the request does not

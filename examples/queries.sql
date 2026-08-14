@@ -70,9 +70,11 @@ citizenship AS (
     JOIN value_items v ON v.qid = a.value
     WHERE a.property = 'P27'
 )
--- a person usually has several occupations and sometimes several
--- citizenships, so collapse them instead of repeating the person per row
-SELECT i.label,
+-- a person usually has several occupations and sometimes several citizenships,
+-- so GROUP BY the qid (a stable key, unlike the label) to collapse them into one
+-- row. Name them by coalesce(label, label_ru) - some items carry only a non-English
+-- label, and grouping by a NULL label would merge distinct people into one blank row.
+SELECT coalesce(i.label, i.label_ru) AS name,
        string_agg(DISTINCT o.occupation, ', ') AS occupations,
        string_agg(DISTINCT z.country, ', ')    AS countries,
        min(l.born) AS born,
@@ -88,7 +90,7 @@ WHERE regexp_matches(z.country, '(?i)\bGerman')
                        'naturalist', 'physician', 'alchemist', 'botanist',
                        'geographer', 'cartographer', 'engineer')
   AND (l.born BETWEEN 1400 AND 1499 OR l.died BETWEEN 1400 AND 1499)
-GROUP BY i.label
+GROUP BY i.qid, i.label, i.label_ru
 ORDER BY born;
 
 
@@ -230,7 +232,7 @@ anchor AS (
     ORDER BY (SELECT count(*) FROM attributes a WHERE a.qid = i.qid) DESC
     LIMIT 1
 )
-SELECT i.label, l.born, l.died
+SELECT coalesce(i.label, i.label_ru) AS name, l.born, l.died
 FROM attributes a
 JOIN value_items v ON v.qid = a.value
 JOIN items i       ON i.qid = a.qid
@@ -248,3 +250,54 @@ WHERE a.property = 'P106'          -- occupation
   -- (e.g. a 1533 birth paired with a stray 1985 death claim)
   AND l.died - l.born <= 110
 ORDER BY l.born;
+
+
+-- 11. The same overlap, but with an occupation AND a location filter together -
+--     e.g. "composers in Russia who lived at the same time as Beethoven". Every
+--     non-null filter in the request gets its own condition: occupation (P106),
+--     location (P27 country, word-boundary matched so Russia != Prussia), and the
+--     anchor overlap. #10 shows occupation+time alone; do NOT copy it and drop the
+--     location - combine both.
+WITH lifespan AS (
+    SELECT qid,
+           max(year) FILTER (WHERE property = 'P569') AS born,
+           max(year) FILTER (WHERE property = 'P570') AS died
+    FROM events
+    GROUP BY qid
+),
+anchor AS (
+    SELECT l.born, l.died
+    FROM items i
+    JOIN lifespan l USING (qid)
+    WHERE i.label ILIKE '%Beethoven%'
+      AND l.born IS NOT NULL
+    ORDER BY (SELECT count(*) FROM attributes a WHERE a.qid = i.qid) DESC
+    LIMIT 1
+),
+occupation AS (
+    SELECT a.qid, v.label AS occupation
+    FROM attributes a
+    JOIN value_items v ON v.qid = a.value
+    WHERE a.property = 'P106'
+),
+citizenship AS (
+    SELECT a.qid, v.label AS country
+    FROM attributes a
+    JOIN value_items v ON v.qid = a.value
+    WHERE a.property = 'P27'
+)
+SELECT coalesce(i.label, i.label_ru) AS name,
+       string_agg(DISTINCT z.country, ', ') AS countries,
+       min(l.born) AS born,
+       min(l.died) AS died
+FROM lifespan l
+JOIN items i       USING (qid)
+JOIN occupation o  USING (qid)
+JOIN citizenship z USING (qid)
+WHERE o.occupation = 'composer'
+  AND regexp_matches(z.country, '(?i)\bRussia')
+  AND l.born <= (SELECT died FROM anchor)
+  AND l.died >= (SELECT born FROM anchor)
+  AND l.died - l.born <= 110
+GROUP BY i.qid, i.label, i.label_ru
+ORDER BY born;
