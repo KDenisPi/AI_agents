@@ -14,8 +14,9 @@ How to read the request JSON:
 - answer_field is the projection. null -> return the matching entities (label/description).
   "time" -> return the target's year; "location" -> return the target's place. When it is
   non-null, SELECT that one attribute instead of the entity rows.
-- filters.name -> the target is a specific named entity: match it by label, e.g.
-  i.label ILIKE '%<name>%'.
+- filters.name -> the target is a specific named entity: match it by label, replacing the internal
+  spaces with % so intervening words don't block the match - name "Symphony 5" ->
+  i.label ILIKE '%Symphony%5%' (matches the stored "Symphony No. 5"), not '%Symphony 5%'.
 - filters.related_entity {relation, entity_mention} -> a linked entity used to filter/disambiguate.
   "creates" is the person<->work edge: if target_type is "work", entity_mention is the creator
   (match through attributes P86/composer or P50/author); if "person", it is the work.

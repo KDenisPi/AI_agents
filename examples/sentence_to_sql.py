@@ -180,7 +180,14 @@ def main() -> None:
     parser.add_argument("--url", default="http://192.168.1.57:11434", help="Ollama server URL")
     parser.add_argument("--model1", default="llama3.1:8b", help="model for stage 1 (sentence -> intent)")
     parser.add_argument("--model2", default="Qwen2.5-Coder", help="model for stage 2 (intent -> SQL)")
-    parser.add_argument("--db", default="sentence_to_sql.duckdb", help="local DuckDB file to run the SQL against")
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        default=0.0,
+        help="sampling temperature for both models; 0 = greedy/deterministic, "
+        "which keeps intent extraction and SQL stable run-to-run",
+    )
+    parser.add_argument("--db", default="/home/denis/projects/wiki_data/run2/wiki.duckdb", help="local DuckDB file to run the SQL against")
     parser.add_argument(
         "--training-log",
         default="sentence_to_sql_stage2_training.jsonl",
@@ -195,13 +202,14 @@ def main() -> None:
     schema = Path(args.schema).read_text()
     sqlexamples = Path(args.sqlexamples).read_text()
 
+    options = {"temperature": args.temperature}
     prompt1 = _fill(context1, sentence=args.sentence)
-    client1 = OllamaClient(args.url, args.model1)
+    client1 = OllamaClient(args.url, args.model1, options=options)
     intent = _extract_intent_json(run_stage(client1, "stage1", prompt1))
     logger.info("stage1 intent (extracted):\n%s", intent)
 
     prompt2 = _fill(context2, answer=intent, schema=schema, examples=sqlexamples)
-    client2 = OllamaClient(args.url, args.model2)
+    client2 = OllamaClient(args.url, args.model2, options=options)
     completion = run_stage(client2, "stage2", prompt2)
     sql = _strip_sql_fence(completion)
 

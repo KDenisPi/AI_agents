@@ -9,7 +9,12 @@ Convert the user's question into a structured JSON query intent. Extract:
                 person: birthplace)
   null       -> return the matching entities themselves (the default)
   Use a non-null answer_field only when the sentence asks for that attribute as the ANSWER
-  ("When did ...", "What year ...", "Where was ...") rather than using it to filter results.
+  rather than using it to filter results. Decide from the question word:
+    "When", "What year", "In what year", "How long ago" -> "time"
+    "Where" -> "location"
+    "Who", "Which", "What ...", "How many", or any yes/no comparison -> null
+  (e.g. "When did Beethoven write Symphony 5?" -> "time"; "Where was Einstein born?" -> "location";
+  "Who wrote Symphony 5?" -> null, because the person is the thing returned, not an attribute.)
 - filters.name: the literal text span naming the target entity directly, or null. Use this when
   the sentence names the specific target itself (e.g. the work "Symphony 5"), as opposed to
   describing it only by category/occupation/domain/time. This is the target entity; a
