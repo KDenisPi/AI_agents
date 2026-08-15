@@ -1,0 +1,19 @@
+docker rm mcp-server
+docker rm data-collector
+docker rm iot-clickhouse-server
+docker rm ai-server
+
+ollama run llama3.1:8b ""
+ollama run qwen3.6:latest ""
+
+#from llama.cpp
+setsid  ./build/bin/llama-server   -m /opt/models/gguf/orpheus-3b-0.1-ft-q4_k_m.gguf   -c 8192 -ngl 99 --host 0.0.0.0 --port 1234   -fa on --cache-type-k q8_0 --cache-type-v q8_0 > logs/llama.log 2>&1 & disown
+
+#from projects/AI_agent
+docker run -d --name=iot-clickhouse-server -p 8123:8123 -p 9000:9000 --ulimit nofile=262144:262144 -v "$PWD/logs/clickhouse:/var/log/clickhouse-server" -v "$PWD/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server:latest
+
+docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name mcp-server -p 8000:8000 ai-agent:latest python -u McpMultiHttpServer.py
+docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name data-collector ai-agent:latest python -u Collector.py
+docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -w /app --name ai-server -d --gpus all -p 8100:8100 ai-server-gpu:latest python -u ai_agent_server.py
+
+
