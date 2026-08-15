@@ -485,7 +485,7 @@ def _demo_run(index: int, config) -> tuple[int, Path | None, dict, float, str | 
     per call, matching independent concurrent requests rather than one
     instance shared across threads."""
     voice = TextToVoice(
-        config.ollama_url, config.ollama_model_text_to_voice, voice=config.ollama_voice
+        config.ollama_url_text_to_voice, config.ollama_model_text_to_voice, voice=config.ollama_voice
     )
     stats: dict = {}
     started = time.perf_counter()

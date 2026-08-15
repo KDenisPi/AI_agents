@@ -62,6 +62,12 @@ class Config:
 
     # --- Ollama ---
     ollama_url: str = "http://192.168.1.57:11434"
+    # Per-model overrides, for a model served by something other than the
+    # shared Ollama host above (e.g. llama-server on its own port). Empty
+    # (the default) falls back to ollama_url - see __post_init__.
+    ollama_url_1: str = ""
+    ollama_url_2: str = ""
+    ollama_url_text_to_voice: str = ""
     # Keep the tag - a bare name resolves to <name>:latest, which the server
     # does not have for llama3.1.
     ollama_model_1: str = "llama3.1:8b"
@@ -143,6 +149,14 @@ class Config:
     # Rotated log files to keep before the oldest is deleted. 0 keeps all.
     log_backup_count: int = 7
 
+    def __post_init__(self) -> None:
+        # Resolve per-model URL overrides now, so every other reader
+        # (constructed directly or via from_env()) can just use
+        # ollama_url_1/_2/_text_to_voice without re-checking for "".
+        self.ollama_url_1 = self.ollama_url_1 or self.ollama_url
+        self.ollama_url_2 = self.ollama_url_2 or self.ollama_url
+        self.ollama_url_text_to_voice = self.ollama_url_text_to_voice or self.ollama_url
+
     def configure_logging(self) -> None:
         """Set up the root logger from log_level/log_file. Call this once,
         from each entry point, right after Config.from_env() - library
@@ -216,6 +230,13 @@ class Config:
                 "WEATHER_LOCATION_OUTSIDE", defaults.weather_location_outside
             ),
             ollama_url=text("OLLAMA_URL", defaults.ollama_url),
+            # "" (not defaults.ollama_url_1, which __post_init__ already
+            # resolved against the class default) so an unset override still
+            # falls back to the OLLAMA_URL value read just above, not the
+            # hardcoded class default.
+            ollama_url_1=text("OLLAMA_URL_1", ""),
+            ollama_url_2=text("OLLAMA_URL_2", ""),
+            ollama_url_text_to_voice=text("OLLAMA_URL_TEXT_TO_VOICE", ""),
             ollama_model_1=text("OLLAMA_MODEL_1", defaults.ollama_model_1),
             ollama_model_2=text("OLLAMA_MODEL_2", defaults.ollama_model_2),
             ollama_model_text_to_voice=text(

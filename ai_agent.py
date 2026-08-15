@@ -95,7 +95,7 @@ class AiAgent:
         # write the same history file. The role suffix keeps them apart even
         # when ollama_model_1 and ollama_model_2 name the same model.
         self.model_small = OllamaClient(
-            config.ollama_url,
+            config.ollama_url_1,
             config.ollama_model_1,
             session_id=session_id_for(config.ollama_model_1, f"{session_id}-small")
             if session_id
@@ -104,7 +104,7 @@ class AiAgent:
             keep_recent_messages=config.ollama_keep_recent_messages,
         )
         self.model_large = OllamaClient(
-            config.ollama_url,
+            config.ollama_url_2,
             config.ollama_model_2,
             session_id=session_id_for(config.ollama_model_2, f"{session_id}-large")
             if session_id
@@ -116,7 +116,7 @@ class AiAgent:
         # prompts and has no conversation to keep. No session_id for the
         # same reason. See text_to_voice.py.
         self.model_text_to_voice = TextToVoice(
-            config.ollama_url,
+            config.ollama_url_text_to_voice,
             config.ollama_model_text_to_voice,
             voice=config.ollama_voice,
             output_dir=config.voice_output_dir,
