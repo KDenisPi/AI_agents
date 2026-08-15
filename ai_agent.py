@@ -19,7 +19,7 @@ from pathlib import Path
 
 from Config import Config
 from OllamaClient import OllamaClient, session_id_for
-from ai_agent_storage import format_current, format_history, format_stats
+from ai_agent_storage import format_current, format_history, format_stats, format_today_outside
 from ai_agent_storage_clickhouse import MetricStorageClickhouse
 from ai_server_graph import GraphError, MetricGrapher
 from text_to_voice import TextToVoice
@@ -66,7 +66,7 @@ class AiAgent:
 	Do not add any other sentence - no interpretation, commentary, or trend descriptions beyond those numbers. \
 	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
     prompt_template_outside_for_today = "Summarize outside sensor readings for today in exactly 2 short sentences: \
-	one for temperature (range and peak only, with the peak's time given as hour:minute - no seconds), one for humidity (range only, no trend detail). \
+	one for temperature (state its min, its max, and the time given next to the max, exactly as given below - do not compute, estimate, or restate them as a different number), one for humidity (min and max only). \
 	Do not add any other sentence - no interpretation, commentary, or notes about the data beyond those numbers. \
 	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
     # {hours} filled in per call. Fed min/max/avg/count per device (sensor
@@ -248,7 +248,7 @@ class AiAgent:
             except GraphError:
                 pass  # nothing to plot - the text summary still goes out
 
-        prompt = (self.prompt_template_outside_for_today + format_history(history))
+        prompt = (self.prompt_template_outside_for_today + format_today_outside(history))
         return self.model_small.chat_once(prompt), graphs
 
     def transalate_eng_ru(self, message: str) -> str:

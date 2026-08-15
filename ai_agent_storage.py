@@ -28,6 +28,9 @@ shape get_current() and today_outside() already use.
 format_current/format_stats/format_history render those results as compact
 text, meant to be dropped straight into an LLM prompt - each handles both
 the single- and multi-metric shape of the function it corresponds to.
+format_today_outside renders today_outside()'s result the same way, but as
+precomputed min/max (plus peak time for temperature) rather than a raw
+per-point dump - see its docstring for why.
 
 outside_locations/inside_locations are location names split by the
 location.outside flag, loaded lazily and cached; refresh_locations()
@@ -139,9 +142,33 @@ def format_history(
     return "\n".join(lines) if lines else "No history data."
 
 
-# today_outside() returns exactly get_history()'s multi-metric shape, so its
-# own formatter is just format_history under another name.
-format_today_outside = format_history
+def format_today_outside(
+    result: dict[str, dict[str, list[HistoryPoint]]]
+) -> str:
+    """Render today_outside()'s per-point history as precomputed min/max -
+    and, for temperature, the time of the max - rather than dumping every
+    raw reading into the prompt for the model to compute over itself. A
+    small model asked to find the range and peak across many raw points
+    was seen inventing a "peak" inconsistent with the range it reported
+    right next to it; computing the real numbers here instead leaves the
+    model nothing to compute, only to phrase."""
+    if not result:
+        return "No history data."
+    lines = []
+    for location, metrics in result.items():
+        for metric, points in metrics.items():
+            if not points:
+                continue
+            lo = min(points, key=lambda p: p.value)
+            hi = max(points, key=lambda p: p.value)
+            if metric == "temperature":
+                lines.append(
+                    f"{location} {metric}: min={lo.value:g} max={hi.value:g} "
+                    f"at {hi.taken_at.strftime('%H:%M')}"
+                )
+            else:
+                lines.append(f"{location} {metric}: min={lo.value:g} max={hi.value:g}")
+    return "\n".join(lines) if lines else "No history data."
 
 
 class MetricStorage:
