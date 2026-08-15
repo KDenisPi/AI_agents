@@ -112,8 +112,8 @@ class AiAgent:
             max_history_tokens=config.ollama_max_history_tokens,
             keep_recent_messages=config.ollama_keep_recent_messages,
         )
-        # Not an OllamaClient: speech synthesis needs /api/generate with raw
-        # prompts and has no conversation to keep. No session_id for the
+        # Not an OllamaClient: speech synthesis needs a raw, untemplated
+        # prompt and has no conversation to keep. No session_id for the
         # same reason. See text_to_voice.py.
         self.model_text_to_voice = TextToVoice(
             config.ollama_url_text_to_voice,
@@ -122,6 +122,7 @@ class AiAgent:
             output_dir=config.voice_output_dir,
             retention_hours=config.voice_retention_hours,
             max_workers=config.voice_max_workers,
+            backend=config.ollama_backend_text_to_voice,
         )
         self._grapher = MetricGrapher(config.graph_output_dir, config.graph_retention_hours)
 

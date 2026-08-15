@@ -68,6 +68,11 @@ class Config:
     ollama_url_1: str = ""
     ollama_url_2: str = ""
     ollama_url_text_to_voice: str = ""
+    # "ollama" (default) talks Ollama's native /api/generate raw=True.
+    # "llama-server" talks llama.cpp's native /completion instead - use this
+    # when ollama_url_text_to_voice points at a bare llama-server instance
+    # rather than Ollama, since llama-server has no /api/generate at all.
+    ollama_backend_text_to_voice: str = "ollama"
     # Keep the tag - a bare name resolves to <name>:latest, which the server
     # does not have for llama3.1.
     ollama_model_1: str = "llama3.1:8b"
@@ -237,6 +242,9 @@ class Config:
             ollama_url_1=text("OLLAMA_URL_1", ""),
             ollama_url_2=text("OLLAMA_URL_2", ""),
             ollama_url_text_to_voice=text("OLLAMA_URL_TEXT_TO_VOICE", ""),
+            ollama_backend_text_to_voice=text(
+                "OLLAMA_BACKEND_TEXT_TO_VOICE", defaults.ollama_backend_text_to_voice
+            ),
             ollama_model_1=text("OLLAMA_MODEL_1", defaults.ollama_model_1),
             ollama_model_2=text("OLLAMA_MODEL_2", defaults.ollama_model_2),
             ollama_model_text_to_voice=text(

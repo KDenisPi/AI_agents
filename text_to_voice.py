@@ -1,5 +1,6 @@
 """
-Speech synthesis via an Orpheus TTS model on Ollama plus the SNAC vocoder.
+Speech synthesis via an Orpheus TTS model plus the SNAC vocoder, talking to
+either Ollama or a bare llama-server instance (see `backend` below).
 
 Orpheus is a Llama-architecture model fine-tuned to emit audio codec
 tokens rather than prose: its reply is a run of <custom_token_N> markers
@@ -8,11 +9,13 @@ tokens, decodes them back into SNAC's three codebooks, and runs them
 through the vocoder to produce a 24 kHz mono .wav.
 
 Two things keep this out of OllamaClient:
-  - the request goes to /api/generate with raw=True. The model on the
-    server carries the stock Llama 3.1 chat template, so /api/chat would
-    wrap the text in <|start_header_id|> scaffolding and the model would
-    never see the prompt format it was trained on - it returns nothing
-    usable. raw=True bypasses templating so we can supply that format.
+  - the request needs the prompt sent completely untemplated. The model
+    carries the stock Llama 3.1 chat template, so a chat-style endpoint
+    would wrap the text in <|start_header_id|> scaffolding and the model
+    would never see the prompt format it was trained on - it returns
+    nothing usable. Both backends have a raw-prompt mode for this: Ollama's
+    /api/generate with raw=True, llama-server's native /completion (which
+    never applies a chat template regardless).
   - there is no conversation. Every call stands alone, so there is no
     history to keep, prune, or persist.
 
@@ -236,6 +239,9 @@ class TextToVoiceError(RuntimeError):
     """The model returned nothing that could be decoded into audio."""
 
 
+BACKENDS = ("ollama", "llama-server")
+
+
 class TextToVoice:
     """
     Usage:
@@ -257,7 +263,11 @@ class TextToVoice:
         retention_hours: float = DEFAULT_RETENTION_HOURS,
         keep_alive: str | int = -1,
         max_workers: int = 4,
+        backend: str = "ollama",
     ):
+        if backend not in BACKENDS:
+            raise ValueError(f"backend must be one of {BACKENDS}, got {backend!r}")
+        self.backend = backend
         self.url = url.rstrip("/")
         self._model = model
         self.voice = voice
@@ -267,7 +277,8 @@ class TextToVoice:
         self.retention_hours = retention_hours
         # Left empty by default so the model's own Modelfile settings apply -
         # Orpheus ships tuned temperature/top_p/repeat_penalty values, and
-        # overriding them tends to make the audio worse, not better.
+        # overriding them tends to make the audio worse, not better. Ollama
+        # only - see _generate().
         self.options = options or {}
         # Generating even a short line takes far longer than a chat reply:
         # roughly 84 audio tokens per second of speech.
@@ -275,7 +286,9 @@ class TextToVoice:
         # -1 keeps the model loaded indefinitely, matching how the chat
         # models (OllamaClient) are kept resident - Ollama's own 5m default
         # would otherwise unload it between manual/spaced-out runs, paying
-        # a multi-second reload on the next call.
+        # a multi-second reload on the next call. Ollama only - a
+        # llama-server process has exactly one model loaded for its whole
+        # lifetime, so there is nothing to keep alive.
         self.keep_alive = keep_alive
         # Chunks are independent model calls (see synthesize()), so they can
         # run concurrently instead of one after another - this bounds how
@@ -337,11 +350,26 @@ class TextToVoice:
 
     def _generate(self, text: str, voice: str) -> list[int]:
         """SNAC codes for one chunk of text, straight from the model."""
+        prompt = build_prompt(text, voice)
+        if self.backend == "llama-server":
+            raw = self._generate_llama_server(prompt)
+        else:
+            raw = self._generate_ollama(prompt)
+
+        codes = parse_snac_tokens(raw)
+        if not codes:
+            raise TextToVoiceError(
+                f"{self.model} returned no usable SNAC tokens for {text[:60]!r} - "
+                "check that it is an Orpheus-style TTS model"
+            )
+        return codes
+
+    def _generate_ollama(self, prompt: str) -> str:
         response = requests.post(
             f"{self.url}/api/generate",
             json={
                 "model": self.model,
-                "prompt": build_prompt(text, voice),
+                "prompt": prompt,
                 # Without this Ollama applies the model's chat template and
                 # the Orpheus prompt format never reaches the model.
                 "raw": True,
@@ -352,14 +380,22 @@ class TextToVoice:
             timeout=self.timeout,
         )
         response.raise_for_status()
+        return response.json().get("response", "")
 
-        codes = parse_snac_tokens(response.json().get("response", ""))
-        if not codes:
-            raise TextToVoiceError(
-                f"{self.model} returned no usable SNAC tokens for {text[:60]!r} - "
-                "check that it is an Orpheus-style TTS model"
-            )
-        return codes
+    def _generate_llama_server(self, prompt: str) -> str:
+        # llama.cpp's own /completion, not the OpenAI-compatible
+        # /v1/completions - it never applies a chat template (there is no
+        # "raw" flag to set because there is nothing to opt out of), which
+        # is exactly what a from-scratch Orpheus prompt needs. self.model
+        # is not sent: a llama-server process serves the one model it was
+        # started with and ignores any name given here.
+        response = requests.post(
+            f"{self.url}/completion",
+            json={"prompt": prompt, "stream": False, **self.options},
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        return response.json().get("content", "")
 
     def _decode(self, codes: list[int]) -> np.ndarray:
         with _vocoder_lock:
@@ -485,7 +521,10 @@ def _demo_run(index: int, config) -> tuple[int, Path | None, dict, float, str | 
     per call, matching independent concurrent requests rather than one
     instance shared across threads."""
     voice = TextToVoice(
-        config.ollama_url_text_to_voice, config.ollama_model_text_to_voice, voice=config.ollama_voice
+        config.ollama_url_text_to_voice,
+        config.ollama_model_text_to_voice,
+        voice=config.ollama_voice,
+        backend=config.ollama_backend_text_to_voice,
     )
     stats: dict = {}
     started = time.perf_counter()
