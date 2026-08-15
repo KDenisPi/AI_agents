@@ -181,14 +181,18 @@ def _spawn(coro) -> None:
     task.add_done_callback(_background_tasks.discard)
 
 
-def _ollama_reachable(config: Config, timeout: float = 2) -> bool:
+def _ollama_reachable(url: str, timeout: float = 2) -> bool:
     """Cheap pre-check so a GET can fail fast with 503 instead of accepting
     work the model call is just going to fail anyway. Hits /v1/models
     rather than an Ollama-native path, since OllamaClient now talks
     OpenAI-compatible /v1/chat/completions and may be pointed at a
-    llama.cpp server instead of Ollama."""
+    llama.cpp server instead of Ollama. Callers pass the URL the actual
+    model call below will use (config.ollama_url_1 for every summarize_*
+    handler here, all of which go through AiAgent.model_small) rather than
+    the shared config.ollama_url, since model_small may be pointed at its
+    own override."""
     try:
-        response = requests.get(f"{config.ollama_url}/v1/models", timeout=timeout)
+        response = requests.get(f"{url}/v1/models", timeout=timeout)
         return response.ok
     except requests.RequestException:
         return False
@@ -298,7 +302,7 @@ def make_app(config: Config) -> Starlette:
         voice = request.query_params.get("voice") or None
         wants_callback = "callback" in request.query_params
         try:
-            reachable = await asyncio.to_thread(_ollama_reachable, config)
+            reachable = await asyncio.to_thread(_ollama_reachable, config.ollama_url_1)
         except Exception as e:
             logger.exception("Could not check Ollama availability")
             return JSONResponse({"error": str(e)}, status_code=500)
@@ -363,7 +367,7 @@ def make_app(config: Config) -> Starlette:
         voice = request.query_params.get("voice") or None
         wants_callback = "callback" in request.query_params
         try:
-            reachable = await asyncio.to_thread(_ollama_reachable, config)
+            reachable = await asyncio.to_thread(_ollama_reachable, config.ollama_url_1)
         except Exception as e:
             logger.exception("Could not check Ollama availability")
             return JSONResponse({"error": str(e)}, status_code=500)
@@ -429,7 +433,7 @@ def make_app(config: Config) -> Starlette:
         wants_graph = "graph" in request.query_params
         wants_callback = "callback" in request.query_params
         try:
-            reachable = await asyncio.to_thread(_ollama_reachable, config)
+            reachable = await asyncio.to_thread(_ollama_reachable, config.ollama_url_1)
         except Exception as e:
             logger.exception("Could not check Ollama availability")
             return JSONResponse({"error": str(e)}, status_code=500)
@@ -516,7 +520,7 @@ def make_app(config: Config) -> Starlette:
             if hours <= 0:
                 return JSONResponse({"error": "hours must be positive"}, status_code=400)
         try:
-            reachable = await asyncio.to_thread(_ollama_reachable, config)
+            reachable = await asyncio.to_thread(_ollama_reachable, config.ollama_url_1)
         except Exception as e:
             logger.exception("Could not check Ollama availability")
             return JSONResponse({"error": str(e)}, status_code=500)
@@ -603,7 +607,7 @@ def make_app(config: Config) -> Starlette:
             if hours <= 0:
                 return JSONResponse({"error": "hours must be positive"}, status_code=400)
         try:
-            reachable = await asyncio.to_thread(_ollama_reachable, config)
+            reachable = await asyncio.to_thread(_ollama_reachable, config.ollama_url_1)
         except Exception as e:
             logger.exception("Could not check Ollama availability")
             return JSONResponse({"error": str(e)}, status_code=500)
