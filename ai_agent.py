@@ -65,10 +65,10 @@ class AiAgent:
 	one for temperature (range and average only), one for humidity (range and average only). \
 	Do not add any other sentence - no interpretation, commentary, or trend descriptions beyond those numbers. \
 	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
-    prompt_template_outside_for_today = "Summarize outside sensor readings for today in exactly 2 short sentences: \
-	one for temperature (state its min, its max, and the time given next to the max, exactly as given below - do not compute, estimate, or restate them as a different number), one for humidity (min and max only). \
-	Do not add any other sentence - no interpretation, commentary, or notes about the data beyond those numbers. \
-	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
+    prompt_template_outside_for_today = "Summarize outside sensor readings for today: write exactly 2 short sentences, \
+	one for temperature (state its low, its high, and the time given next to the high, exactly as given below - do not compute, estimate, or restate them as different numbers), one for humidity (low and high only). \
+	Output only those two sentences themselves - no preamble, no repeating these instructions, no interpretation, commentary, or notes about the data beyond those numbers. \
+	Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No closing remarks.\n"
     # {hours} filled in per call. Fed min/max/avg/count per device (sensor
     # name, not location - several power sensors can share one location, see
     # summarize_history_power_last_hours), same as

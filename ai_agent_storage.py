@@ -145,13 +145,17 @@ def format_history(
 def format_today_outside(
     result: dict[str, dict[str, list[HistoryPoint]]]
 ) -> str:
-    """Render today_outside()'s per-point history as precomputed min/max -
-    and, for temperature, the time of the max - rather than dumping every
+    """Render today_outside()'s per-point history as precomputed low/high -
+    and, for temperature, the time of the high - rather than dumping every
     raw reading into the prompt for the model to compute over itself. A
     small model asked to find the range and peak across many raw points
     was seen inventing a "peak" inconsistent with the range it reported
     right next to it; computing the real numbers here instead leaves the
-    model nothing to compute, only to phrase."""
+    model nothing to compute, only to phrase.
+
+    Written as plain words ("low X, high Y"), not "min=X max=Y" - that
+    key=value shape reads enough like code that the model echoed it back
+    verbatim instead of writing a sentence around it."""
     if not result:
         return "No history data."
     lines = []
@@ -163,11 +167,11 @@ def format_today_outside(
             hi = max(points, key=lambda p: p.value)
             if metric == "temperature":
                 lines.append(
-                    f"{location} {metric}: min={lo.value:g} max={hi.value:g} "
+                    f"{location} {metric}: low {lo.value:g}, high {hi.value:g} "
                     f"at {hi.taken_at.strftime('%H:%M')}"
                 )
             else:
-                lines.append(f"{location} {metric}: min={lo.value:g} max={hi.value:g}")
+                lines.append(f"{location} {metric}: low {lo.value:g}, high {hi.value:g}")
     return "\n".join(lines) if lines else "No history data."
 
 
