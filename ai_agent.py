@@ -41,7 +41,8 @@ class AiAgent:
         # left off, instead of starting fresh each process:
         agent = AiAgent(config, session_id="kitchen")
     """
-    prompt_template_summarize_current = "Summarize these current sensor readings in 2-3 short sentences total. No notes or closing remarks. \n"
+    prompt_template_summarize_current = "Summarize these current sensor readings in 2-3 short sentences total. \
+	Do not mention the specific date or time each reading was taken - these are current conditions, so there is no need to say when. No notes or closing remarks.\n"
 
     # The all-normal reply is a fixed phrase decided in code (see
     # summarize_current_battery), never by the model - the small model kept
