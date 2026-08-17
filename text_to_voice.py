@@ -13,9 +13,9 @@ Two things keep this out of OllamaClient:
     carries the stock Llama 3.1 chat template, so a chat-style endpoint
     would wrap the text in <|start_header_id|> scaffolding and the model
     would never see the prompt format it was trained on - it returns
-    nothing usable. Both backends have a raw-prompt mode for this: Ollama's
-    /api/generate with raw=True, llama-server's native /completion (which
-    never applies a chat template regardless).
+    nothing usable. RawCompletionClient (see that module) covers this: a
+    raw-prompt mode against either backend, Ollama's /api/generate with
+    raw=True or llama-server's native /completion.
   - there is no conversation. Every call stands alone, so there is no
     history to keep, prune, or persist.
 
@@ -34,9 +34,10 @@ from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
-import requests
 import torch
 from snac import SNAC
+
+from RawCompletionClient import BACKENDS, RawCompletionClient
 
 # oneDNN's AArch64 JIT backend (also named Xbyak) has a bug that mis-encodes
 # an immediate operand for some conv1d shapes on this CPU, crashing with
@@ -239,9 +240,6 @@ class TextToVoiceError(RuntimeError):
     """The model returned nothing that could be decoded into audio."""
 
 
-BACKENDS = ("ollama", "llama-server")
-
-
 class TextToVoice:
     """
     Usage:
@@ -265,10 +263,6 @@ class TextToVoice:
         max_workers: int = 4,
         backend: str = "ollama",
     ):
-        if backend not in BACKENDS:
-            raise ValueError(f"backend must be one of {BACKENDS}, got {backend!r}")
-        self.backend = backend
-        self.url = url.rstrip("/")
         self._model = model
         self.voice = voice
         # Synthesized audio is only useful until the client has fetched it,
@@ -278,18 +272,19 @@ class TextToVoice:
         # Left empty by default so the model's own Modelfile settings apply -
         # Orpheus ships tuned temperature/top_p/repeat_penalty values, and
         # overriding them tends to make the audio worse, not better. Ollama
-        # only - see _generate().
-        self.options = options or {}
+        # only - see RawCompletionClient.
         # Generating even a short line takes far longer than a chat reply:
-        # roughly 84 audio tokens per second of speech.
-        self.timeout = timeout
+        # roughly 84 audio tokens per second of speech - hence the longer
+        # default timeout than a chat call.
         # -1 keeps the model loaded indefinitely, matching how the chat
         # models (OllamaClient) are kept resident - Ollama's own 5m default
         # would otherwise unload it between manual/spaced-out runs, paying
         # a multi-second reload on the next call. Ollama only - a
         # llama-server process has exactly one model loaded for its whole
         # lifetime, so there is nothing to keep alive.
-        self.keep_alive = keep_alive
+        self._client = RawCompletionClient(
+            url, model, backend=backend, options=options, timeout=timeout, keep_alive=keep_alive
+        )
         # Chunks are independent model calls (see synthesize()), so they can
         # run concurrently instead of one after another - this bounds how
         # many are ever in flight against the Ollama host at once.
@@ -351,10 +346,7 @@ class TextToVoice:
     def _generate(self, text: str, voice: str) -> list[int]:
         """SNAC codes for one chunk of text, straight from the model."""
         prompt = build_prompt(text, voice)
-        if self.backend == "llama-server":
-            raw = self._generate_llama_server(prompt)
-        else:
-            raw = self._generate_ollama(prompt)
+        raw = self._client.generate(prompt)
 
         codes = parse_snac_tokens(raw)
         if not codes:
@@ -363,39 +355,6 @@ class TextToVoice:
                 "check that it is an Orpheus-style TTS model"
             )
         return codes
-
-    def _generate_ollama(self, prompt: str) -> str:
-        response = requests.post(
-            f"{self.url}/api/generate",
-            json={
-                "model": self.model,
-                "prompt": prompt,
-                # Without this Ollama applies the model's chat template and
-                # the Orpheus prompt format never reaches the model.
-                "raw": True,
-                "stream": False,
-                "options": self.options,
-                "keep_alive": self.keep_alive,
-            },
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        return response.json().get("response", "")
-
-    def _generate_llama_server(self, prompt: str) -> str:
-        # llama.cpp's own /completion, not the OpenAI-compatible
-        # /v1/completions - it never applies a chat template (there is no
-        # "raw" flag to set because there is nothing to opt out of), which
-        # is exactly what a from-scratch Orpheus prompt needs. self.model
-        # is not sent: a llama-server process serves the one model it was
-        # started with and ignores any name given here.
-        response = requests.post(
-            f"{self.url}/completion",
-            json={"prompt": prompt, "stream": False, **self.options},
-            timeout=self.timeout,
-        )
-        response.raise_for_status()
-        return response.json().get("content", "")
 
     def _decode(self, codes: list[int]) -> np.ndarray:
         with _vocoder_lock:
