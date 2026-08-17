@@ -1,0 +1,16 @@
+{
+  "sentence": "Where was the theory of relativity developed?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": "location",
+    "filters": {
+      "name": "theory of relativity",
+      "occupation": null,
+      "location": null,
+      "domain": "science",
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

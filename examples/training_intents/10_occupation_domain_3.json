@@ -1,0 +1,16 @@
+{
+  "sentence": "Which musicians worked in jazz?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": "musician",
+      "location": null,
+      "domain": "jazz",
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

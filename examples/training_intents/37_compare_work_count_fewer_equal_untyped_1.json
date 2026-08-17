@@ -1,0 +1,24 @@
+{
+  "sentence": "Who created fewer works overall, Einstein or Newton?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": {
+        "entities": [
+          "Einstein",
+          "Newton"
+        ],
+        "aspect": "work_count",
+        "relation": "fewer",
+        "work_type": null
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "sentence": "Were Einstein and Newton born in different countries?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": {
+        "entities": [
+          "Einstein",
+          "Newton"
+        ],
+        "aspect": "location",
+        "relation": "different"
+      }
+    }
+  }
+}

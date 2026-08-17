@@ -1,0 +1,24 @@
+{
+  "sentence": "Which novelist wrote more books, Tolstoy or Dostoevsky?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": "novelist",
+      "location": null,
+      "domain": "literature",
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": {
+        "entities": [
+          "Tolstoy",
+          "Dostoevsky"
+        ],
+        "aspect": "work_count",
+        "relation": "more",
+        "work_type": "books"
+      }
+    }
+  }
+}

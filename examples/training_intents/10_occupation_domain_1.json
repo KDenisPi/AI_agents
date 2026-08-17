@@ -1,0 +1,16 @@
+{
+  "sentence": "Which scientists worked in astronomy?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": "scientist",
+      "location": null,
+      "domain": "astronomy",
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

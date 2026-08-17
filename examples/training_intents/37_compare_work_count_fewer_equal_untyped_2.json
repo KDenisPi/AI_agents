@@ -1,0 +1,24 @@
+{
+  "sentence": "Did Beethoven and Mahler write an equal number of works?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": {
+        "entities": [
+          "Beethoven",
+          "Mahler"
+        ],
+        "aspect": "work_count",
+        "relation": "equal",
+        "work_type": null
+      }
+    }
+  }
+}

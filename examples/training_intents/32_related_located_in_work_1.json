@@ -1,0 +1,19 @@
+{
+  "sentence": "What works were created in Paris?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": {
+        "relation": "located_in",
+        "entity_mention": "Paris"
+      },
+      "compare_entities": null
+    }
+  }
+}

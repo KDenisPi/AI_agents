@@ -1,0 +1,20 @@
+{
+  "sentence": "Which composers were active before Beethoven?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": "composer",
+      "location": null,
+      "domain": "music",
+      "time_constraint": {
+        "type": "relative_to_entity",
+        "relation": "before",
+        "entity_mention": "Beethoven"
+      },
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

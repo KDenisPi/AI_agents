@@ -1,0 +1,19 @@
+{
+  "sentence": "Which authors wrote War and Peace?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": "author",
+      "location": null,
+      "domain": "literature",
+      "time_constraint": null,
+      "related_entity": {
+        "relation": "creates",
+        "entity_mention": "War and Peace"
+      },
+      "compare_entities": null
+    }
+  }
+}

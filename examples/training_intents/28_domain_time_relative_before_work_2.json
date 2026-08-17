@@ -1,0 +1,20 @@
+{
+  "sentence": "What scientific theories were developed after Newton?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": "science",
+      "time_constraint": {
+        "type": "relative_to_entity",
+        "relation": "after",
+        "entity_mention": "Newton"
+      },
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

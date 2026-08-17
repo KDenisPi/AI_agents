@@ -1,0 +1,21 @@
+{
+  "sentence": "Which writers lived in the 17th century?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": "writer",
+      "location": null,
+      "domain": "literature",
+      "time_constraint": {
+        "type": "in_range",
+        "start_year": 1601,
+        "end_year": 1700,
+        "precision": "century"
+      },
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

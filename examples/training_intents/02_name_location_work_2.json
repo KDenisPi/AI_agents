@@ -1,0 +1,16 @@
+{
+  "sentence": "Where was Notre-Dame Cathedral constructed?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": "location",
+    "filters": {
+      "name": "Notre-Dame Cathedral",
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

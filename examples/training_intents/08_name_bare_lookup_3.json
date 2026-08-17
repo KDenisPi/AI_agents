@@ -1,0 +1,16 @@
+{
+  "sentence": "What was the Battle of Waterloo?",
+  "intent": {
+    "target_type": "event",
+    "answer_field": null,
+    "filters": {
+      "name": "Battle of Waterloo",
+      "occupation": null,
+      "location": null,
+      "domain": "war",
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

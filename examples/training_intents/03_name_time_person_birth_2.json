@@ -1,0 +1,16 @@
+{
+  "sentence": "When was Marie Curie born?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": "time",
+    "filters": {
+      "name": "Marie Curie",
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

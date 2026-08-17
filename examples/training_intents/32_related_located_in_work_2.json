@@ -1,0 +1,19 @@
+{
+  "sentence": "What novels were written in Saint Petersburg?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": "literature",
+      "time_constraint": null,
+      "related_entity": {
+        "relation": "located_in",
+        "entity_mention": "Saint Petersburg"
+      },
+      "compare_entities": null
+    }
+  }
+}

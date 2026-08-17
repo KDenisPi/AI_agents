@@ -1,0 +1,24 @@
+{
+  "sentence": "Who lived longest, Beethoven, Mahler, or Mozart?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": {
+        "entities": [
+          "Beethoven",
+          "Mahler",
+          "Mozart"
+        ],
+        "aspect": "age",
+        "relation": "more"
+      }
+    }
+  }
+}

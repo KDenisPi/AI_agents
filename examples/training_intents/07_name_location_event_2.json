@@ -1,0 +1,16 @@
+{
+  "sentence": "Where did the Yalta Conference happen?",
+  "intent": {
+    "target_type": "event",
+    "answer_field": "location",
+    "filters": {
+      "name": "Yalta Conference",
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

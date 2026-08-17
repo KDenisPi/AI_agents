@@ -1,0 +1,19 @@
+{
+  "sentence": "What symphonies did Beethoven compose?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": "music",
+      "time_constraint": null,
+      "related_entity": {
+        "relation": "creates",
+        "entity_mention": "Beethoven"
+      },
+      "compare_entities": null
+    }
+  }
+}

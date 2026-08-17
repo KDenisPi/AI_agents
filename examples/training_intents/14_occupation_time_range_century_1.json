@@ -1,0 +1,21 @@
+{
+  "sentence": "Which scientists lived in the 19th century?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": "scientist",
+      "location": null,
+      "domain": "science",
+      "time_constraint": {
+        "type": "in_range",
+        "start_year": 1801,
+        "end_year": 1900,
+        "precision": "century"
+      },
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

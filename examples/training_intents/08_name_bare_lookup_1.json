@@ -1,0 +1,16 @@
+{
+  "sentence": "Tell me about Symphony No. 5",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": "Symphony No. 5",
+      "occupation": null,
+      "location": null,
+      "domain": "music",
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "sentence": "What novels did Dostoevsky write in the 1860s?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": "literature",
+      "time_constraint": {
+        "type": "in_range",
+        "start_year": 1860,
+        "end_year": 1869,
+        "precision": "decade"
+      },
+      "related_entity": {
+        "relation": "creates",
+        "entity_mention": "Dostoevsky"
+      },
+      "compare_entities": null
+    }
+  }
+}

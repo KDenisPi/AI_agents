@@ -1,0 +1,19 @@
+{
+  "sentence": "What conferences did Churchill attend?",
+  "intent": {
+    "target_type": "event",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": {
+        "relation": "participates_in",
+        "entity_mention": "Churchill"
+      },
+      "compare_entities": null
+    }
+  }
+}

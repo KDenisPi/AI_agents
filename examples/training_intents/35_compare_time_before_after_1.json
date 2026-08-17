@@ -1,0 +1,23 @@
+{
+  "sentence": "Was the Eiffel Tower built before the Statue of Liberty?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": {
+        "entities": [
+          "Eiffel Tower",
+          "Statue of Liberty"
+        ],
+        "aspect": "time",
+        "relation": "before"
+      }
+    }
+  }
+}

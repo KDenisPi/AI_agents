@@ -1,0 +1,21 @@
+{
+  "sentence": "Which paintings in Renaissance art were created in the 15th century?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": "Renaissance art",
+      "time_constraint": {
+        "type": "in_range",
+        "start_year": 1401,
+        "end_year": 1500,
+        "precision": "century"
+      },
+      "related_entity": null,
+      "compare_entities": null
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "sentence": "What symphonies were composed in Vienna?",
+  "intent": {
+    "target_type": "work",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": "music",
+      "time_constraint": null,
+      "related_entity": {
+        "relation": "located_in",
+        "entity_mention": "Vienna"
+      },
+      "compare_entities": null
+    }
+  }
+}

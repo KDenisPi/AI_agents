@@ -1,0 +1,24 @@
+{
+  "sentence": "Who painted more portraits, Rembrandt or Vermeer?",
+  "intent": {
+    "target_type": "person",
+    "answer_field": null,
+    "filters": {
+      "name": null,
+      "occupation": null,
+      "location": null,
+      "domain": null,
+      "time_constraint": null,
+      "related_entity": null,
+      "compare_entities": {
+        "entities": [
+          "Rembrandt",
+          "Vermeer"
+        ],
+        "aspect": "work_count",
+        "relation": "more",
+        "work_type": "portraits"
+      }
+    }
+  }
+}
