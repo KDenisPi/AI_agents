@@ -148,7 +148,14 @@ def log_training_example(
     prompt actually sent (schema and request already filled in) so it stays
     reproducible even after the templates change, plus whether the SQL it
     produced actually ran - a cheap signal for filtering good examples from
-    bad ones once DuckDB is available to check against."""
+    bad ones once DuckDB is available to check against.
+
+    db_status only says the SQL executed without error - it says nothing
+    about whether the rows it returned actually answer the sentence. That
+    judgment call needs a human to look at the output, so "human_correct" is
+    left null here and is meant to be hand-filled in the JSONL afterward:
+    true (answered it), false (ran but wrong/empty/irrelevant), or left null
+    (not reviewed yet)."""
     record = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "model": model,
@@ -158,6 +165,7 @@ def log_training_example(
         "db_status": db_result["status"],
         "db_error": db_result["error"],
         "row_count": db_result["row_count"],
+        "human_correct": None,
     }
     with open(path, "a") as f:
         f.write(json.dumps(record) + "\n")
