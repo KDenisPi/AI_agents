@@ -13,7 +13,7 @@ setsid  ./build/bin/llama-server   -m /opt/models/gguf/orpheus-3b-0.1-ft-q4_k_m.
 docker run -d --name=iot-clickhouse-server -p 8123:8123 -p 9000:9000 --ulimit nofile=262144:262144 -v "$PWD/logs/clickhouse:/var/log/clickhouse-server" -v "$PWD/data/clickhouse:/var/lib/clickhouse" clickhouse/clickhouse-server:latest
 
 docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name mcp-server -p 8000:8000 ai-agent:latest python -u McpMultiHttpServer.py
-docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name data-collector ai-agent:latest python -u Collector.py
+docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name data-collector ai-agent:latest python -u CollectorClickhouse.py
 docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -w /app --name ai-server -d --gpus all -p 8100:8100 ai-server-gpu:latest python -u ai_agent_server.py
 
 
