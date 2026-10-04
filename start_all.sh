@@ -92,6 +92,7 @@ else
             -m "$LLAMA_MODEL" \
             -c 8192 -ngl 99 --host 0.0.0.0 --port "$LLAMA_PORT" \
             -fa on --cache-type-k q8_0 --cache-type-v q8_0 \
+            -np 4 --no-kv-unified \
             >"$LLAMA_LOG" 2>&1 </dev/null &
         echo $! >"$LLAMA_PIDFILE"
         disown
