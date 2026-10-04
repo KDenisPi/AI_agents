@@ -168,6 +168,28 @@ def _to_codebooks(codes: list[int], device: str) -> list[torch.Tensor]:
 
 
 _SENTENCE_END = re.compile(r"(?<=[.,!?])\s+")
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*")
+_MD_ITALIC = re.compile(r"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)")
+# A blank line (optionally after a trailing colon, e.g. a "here's the
+# list:" lead-in) reads as a paragraph break but has no sentence-ending
+# punctuation of its own, so split_sentences() fuses it into whatever
+# comes next. Orpheus was trained on single spoken utterances, not
+# documents, and reliably drops out of audio-token generation - answering
+# like a chat model instead - when fed a chunk like that. Turning the
+# break into a period first gives split_sentences() a real boundary to
+# cut on.
+_PARAGRAPH_BREAK = re.compile(r":?[ \t]*\n[ \t]*\n+[ \t]*")
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _sanitize_for_speech(text: str) -> str:
+    """Strip markdown and paragraph structure a TTS model was never
+    trained to read, so split_sentences() only ever sees plain prose.
+    See _PARAGRAPH_BREAK for why this matters, not just how."""
+    text = _MD_BOLD.sub(r"\1", text)
+    text = _MD_ITALIC.sub(r"\1", text)
+    text = _PARAGRAPH_BREAK.sub(". ", text)
+    return _WHITESPACE.sub(" ", text).strip()
 
 
 def split_sentences(text: str) -> list[str]:
@@ -407,7 +429,7 @@ class TextToVoice:
         # the file about to be written is never a candidate.
         self.cleanup()
 
-        chunks = split_text(text)
+        chunks = split_text(_sanitize_for_speech(text))
         if not chunks:
             raise TextToVoiceError("No text to speak")
 
