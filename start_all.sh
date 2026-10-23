@@ -27,7 +27,7 @@ LLAMA_PORT="${LLAMA_PORT:-1234}"
 LLAMA_PIDFILE="$LLAMA_CPP_DIR/logs/llama.pid"
 LLAMA_LOG="$LLAMA_CPP_DIR/logs/llama.log"
 
-OLLAMA_MODELS=("llama3.1:8b" "qwen3.6:latest")
+OLLAMA_MODELS=("llama3.1-16k:latest" "qwen3.6:latest")
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
