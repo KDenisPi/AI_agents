@@ -16,7 +16,8 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLAMA_CPP_DIR="${LLAMA_CPP_DIR:-/home/denis/projects/llama.cpp}"
 LLAMA_PIDFILE="$LLAMA_CPP_DIR/logs/llama.pid"
 
-OLLAMA_MODELS=("llama3.1:8b" "qwen3.6:latest")
+#OLLAMA_MODELS=("llama3.1-16k:latest" "qwen3.6:latest")
+OLLAMA_MODELS=("llama3.1-16k:latest")
 # Exact reverse of start_all.sh's start order:
 #   models -> clickhouse -> mcp-server -> data-collector -> ai-server
 # so: ai-server -> data-collector -> mcp-server -> clickhouse -> models
