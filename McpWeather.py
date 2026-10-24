@@ -4,7 +4,7 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ToolAnnotations
 
 from Config import Config
 from HttpClient import MyHttpClient
@@ -53,6 +53,12 @@ class McpWeatherServer:
                 inputSchema={
                     "type": "object",
                 },
+                annotations=ToolAnnotations(
+                    readOnlyHint=True,
+                    destructiveHint=False,
+                    idempotentHint=True,
+                    openWorldHint=False,
+                ),
             ),
         ]
 
