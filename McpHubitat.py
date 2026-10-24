@@ -21,7 +21,7 @@ import logging
 from typing import Any
 
 from mcp.server import Server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, ToolAnnotations
 
 from Config import Config
 from HubitatClient import HubitatClient
@@ -35,6 +35,16 @@ _DEVICE_ID_SCHEMA = {
     },
     "required": ["device_id"],
 }
+
+# Every tool here is a read-only Maker API query (see module docstring) -
+# none of them change device or hub state, so all of them get the same
+# read-only annotations.
+_READ_ONLY = ToolAnnotations(
+    readOnlyHint=True,
+    destructiveHint=False,
+    idempotentHint=True,
+    openWorldHint=False,
+)
 
 
 class McpHubitatServer:
@@ -81,31 +91,37 @@ class McpHubitatServer:
                 name="get_all_devices",
                 description="List every device known to this Maker API instance (id, name, label, type).",
                 inputSchema={"type": "object"},
+                annotations=_READ_ONLY,
             ),
             Tool(
                 name="get_all_devices_full_info",
                 description="Every device with full details: current attributes, capabilities, and commands.",
                 inputSchema={"type": "object"},
+                annotations=_READ_ONLY,
             ),
             Tool(
                 name="get_device_info",
                 description="Full info for one device: current attributes, capabilities, and available commands.",
                 inputSchema=_DEVICE_ID_SCHEMA,
+                annotations=_READ_ONLY,
             ),
             Tool(
                 name="get_device_event_history",
                 description="Recent event history for one device.",
                 inputSchema=_DEVICE_ID_SCHEMA,
+                annotations=_READ_ONLY,
             ),
             Tool(
                 name="get_device_commands",
                 description="Commands one device supports.",
                 inputSchema=_DEVICE_ID_SCHEMA,
+                annotations=_READ_ONLY,
             ),
             Tool(
                 name="get_device_capabilities",
                 description="Capabilities one device supports.",
                 inputSchema=_DEVICE_ID_SCHEMA,
+                annotations=_READ_ONLY,
             ),
             Tool(
                 name="get_device_attribute",
@@ -121,11 +137,13 @@ class McpHubitatServer:
                     },
                     "required": ["device_id", "attribute"],
                 },
+                annotations=_READ_ONLY,
             ),
             Tool(
                 name="get_list_hub_variables",
                 description="All hub variables defined on this hub.",
                 inputSchema={"type": "object"},
+                annotations=_READ_ONLY,
             ),
         ]
 
