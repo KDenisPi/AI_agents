@@ -123,6 +123,11 @@ class Config:
     # terminating on a different name, or where the Host header shouldn't be
     # echoed into a URL the callback receiver will fetch.
     ai_agent_public_url: str = ""
+    # Where McpAiAgent.py (run inside the mcp-server container) reaches
+    # ai_agent_server.py's HTTP API from. The two containers sit on the
+    # default Docker bridge network with no DNS between them, so this has
+    # to be the host's LAN address and published port, not a container name.
+    ai_agent_internal_url: str = "http://192.168.1.57:8100"
 
     # --- Scheduling ---
     interval_seconds: int = 600
@@ -275,6 +280,9 @@ class Config:
                 "AI_CLIENT_CALLBACK_TIMEOUT", defaults.ai_client_callback_timeout
             ),
             ai_agent_public_url=text("AI_AGENT_PUBLIC_URL", defaults.ai_agent_public_url),
+            ai_agent_internal_url=text(
+                "AI_AGENT_INTERNAL_URL", defaults.ai_agent_internal_url
+            ),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
             power_interval_seconds=number(
                 "POWER_INTERVAL_SECONDS", defaults.power_interval_seconds
