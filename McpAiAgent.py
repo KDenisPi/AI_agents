@@ -114,13 +114,27 @@ class McpAiAgentServer:
             ),
             Tool(
                 name="outside_today",
-                description="Summary of today's outside temperature and humidity.",
+                description=(
+                    "Use this for 'outside temperature today' or 'how hot/cold has "
+                    "it been today'. Summary of today's outside temperature and "
+                    "humidity from the dedicated weather station's full history - "
+                    "unlike a Hubitat device's event log, which only keeps a few "
+                    "hours and is not a substitute for this."
+                ),
                 inputSchema={"type": "object"},
                 annotations=_READ_ONLY,
             ),
             Tool(
                 name="outside_last_hours",
-                description="Summary of outside temperature and humidity over the last N hours.",
+                description=(
+                    "Use this for 'outside temperature trend', 'has it been getting "
+                    "warmer/colder', or 'outside temperature/humidity over the last "
+                    "N hours'. Historical outside temperature and humidity over "
+                    "time, over the last N hours (default 24), from the dedicated "
+                    "weather station's full history - unlike a Hubitat device's "
+                    "event log, which only keeps a few hours of history and is not "
+                    "a substitute for a trend over 'today' or longer."
+                ),
                 inputSchema=_HOURS_SCHEMA,
                 annotations=_READ_ONLY,
             ),
