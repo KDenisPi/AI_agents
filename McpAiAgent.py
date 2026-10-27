@@ -126,7 +126,14 @@ class McpAiAgentServer:
             ),
             Tool(
                 name="power_last_hours",
-                description="Summary of per-device power usage over the last N hours.",
+                description=(
+                    "Historical power usage per device over time - typical and peak "
+                    "wattage over the last N hours (default 24, i.e. roughly 'today'). "
+                    "This is the only source with power usage over time / trends; a "
+                    "device's current/instantaneous wattage from a smart-outlet "
+                    "attribute is not a substitute for this and cannot show usage "
+                    "'today' or 'over the last N hours' on its own."
+                ),
                 inputSchema=_HOURS_SCHEMA,
                 annotations=_READ_ONLY,
             ),
