@@ -52,15 +52,28 @@ Client to AI_AGENT:
         voice, graph and callback all work exactly as they do on
         /api/outside_today.
 
-    GET /api/power_last_hours[?request_id=<id>][&hours=<n>][&voice[=<name>]][&graph][&callback]
+    GET /api/power_last_hours[?request_id=<id>][&hours=<n>][&device=<name>][&voice[=<name>]][&graph][&callback]
         Same 200/503/500/400 contract as /api/outside_last_hours. Summarizes
-        the last <hours> of power usage per device
+        the last <hours> of power usage (typical/peak in kW, plus an
+        estimated total energy used in kWh) per device
         (AiAgent.summarize_history_power_last_hours, i.e.
         MetricStorage.get_stats_last_hours("power", hours)). hours defaults
-        to 24. voice, graph and callback all work exactly as they do on
-        /api/outside_last_hours. graph, when given, is a single PNG with one
-        line per device on the same axes, not one per metric - there is only
-        the one metric (power) here, split across devices instead.
+        to 24 and is not capped at a day - e.g. 720 covers "the last month".
+        device narrows the summary to one sensor name (see
+        /api/power_devices below for the valid names); omit it to summarize
+        every device, as before. voice, graph and callback all work exactly
+        as they do on /api/outside_last_hours. graph, when given, is a
+        single PNG with one line per device (or just the one, if device was
+        given) on the same axes, not one per metric - there is only the one
+        metric (power) here, split across devices instead.
+
+    GET /api/power_devices
+        -> 200 {"devices": ["<name>", ...]}
+        -> 500 something went wrong querying the DB
+        Device/sensor names /api/power_last_hours' &device will accept, for
+        a client that wants to offer a picker (see ai_client/web/app.js)
+        instead of guessing names. Answers directly - no model call, no
+        accept-then-poll, no request_id.
 
 AI_AGENT to Client (config.ai_client_callback_url, POST - only for a
 request that asked for it with &callback, see above):
@@ -595,6 +608,7 @@ def make_app(config: Config) -> Starlette:
         voice = request.query_params.get("voice") or None
         wants_graph = "graph" in request.query_params
         wants_callback = "callback" in request.query_params
+        device = request.query_params.get("device") or None
         # Same reasoning as handle_outside_last_hours above.
         hours_param = request.query_params.get("hours")
         if hours_param is None:
@@ -626,6 +640,7 @@ def make_app(config: Config) -> Starlette:
                 voice,
                 wants_graph,
                 wants_callback,
+                device,
                 started,
                 # Captured here because the callback is built long after the
                 # request object is gone.
@@ -647,13 +662,14 @@ def make_app(config: Config) -> Starlette:
         voice: str | None,
         wants_graph: bool,
         wants_callback: bool,
+        device: str | None,
         started: float,
         base_url: str,
     ) -> None:
         agent = app.state.agent
         try:
             text, graphs = await asyncio.to_thread(
-                agent.summarize_history_power_last_hours, hours, wants_graph
+                agent.summarize_history_power_last_hours, hours, wants_graph, device
             )
             payload = {
                 "text": text,
@@ -672,6 +688,20 @@ def make_app(config: Config) -> Starlette:
         _log_done("/api/power_last_hours", request_id, payload, started)
         if wants_callback:
             await _post_callback(config, payload)
+
+    async def handle_power_devices(request: Request) -> Response:
+        # Unlike every other handler here, this needs no model call - just a
+        # DB lookup - so it answers directly instead of going through the
+        # accept-then-poll dance: a device picker (see ai_client/web/app.js)
+        # wants this list before the user has asked any question at all.
+        _log_request(request)
+        agent = request.app.state.agent
+        try:
+            devices = await asyncio.to_thread(agent.list_power_devices)
+        except Exception as e:
+            logger.exception("list_power_devices failed")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse({"devices": devices}, status_code=200)
 
     async def handle_poll(request: Request) -> Response:
         tracked_id = request.app.state.poll_request_id
@@ -709,6 +739,7 @@ def make_app(config: Config) -> Starlette:
             Route("/api/outside_today", handle_outside_today, methods=["GET"]),
             Route("/api/outside_last_hours", handle_outside_last_hours, methods=["GET"]),
             Route("/api/power_last_hours", handle_power_last_hours, methods=["GET"]),
+            Route("/api/power_devices", handle_power_devices, methods=["GET"]),
             Route("/api/poll", handle_poll, methods=["GET"]),
             Mount(
                 AUDIO_URL_PREFIX,

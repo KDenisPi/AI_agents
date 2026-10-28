@@ -209,6 +209,18 @@ class MetricStorageClickhouse:
         self._outside_locations = outside
         self._inside_locations = inside
 
+    def list_power_sensors(self) -> list[str]:
+        """Device/sensor names that have ever reported the power metric -
+        for a device picker, not a reading. No time window, so a device
+        unplugged last month still shows up to pick from."""
+        query = (
+            "SELECT DISTINCT s.name AS name "
+            f"FROM {POWER_TABLE} me "
+            "JOIN sensor s ON s.sensorid = me.sensor_sensorid "
+            "ORDER BY s.name"
+        )
+        return [row["name"] for row in self._query(query, {})]
+
     def get_stats(
         self,
         metric: str | list[str],

@@ -26,23 +26,27 @@ from text_to_voice import TextToVoice
 
 
 def _format_power_stats_with_energy(stats: dict[str, MetricStats], hours: int) -> str:
-    """Like format_stats(), but with an estimated total energy figure (kWh)
-    appended to each device's line - min/max/avg/count alone answer "how
-    much power does X typically draw", not "how much power did X use", which
-    needs a quantity integrated over the window rather than an instantaneous
-    one. MetricStats carries no running total, only avg/min/max/count, so
-    this estimates it as avg_watts * hours / 1000 - exact if readings were
-    taken at perfectly even intervals (true for the 10-minute collector
-    cadence as long as there's no gap in that device's readings), an
-    underestimate if the device was offline for part of the window, since
-    avg is only over the readings that exist."""
+    """Like format_stats(), but in kW instead of the raw watts the readings
+    are stored in - a smart-plug reading in the tens to low hundreds of
+    watts is more naturally a fraction of a kW once there's a whole-house
+    context to compare it against - with an estimated total energy figure
+    (kWh) appended to each device's line. min/max/avg/count alone answer
+    "how much power does X typically draw", not "how much power did X use",
+    which needs a quantity integrated over the window rather than an
+    instantaneous one. MetricStats carries no running total, only
+    avg/min/max/count, so this estimates it as avg_kw * hours - exact if
+    readings were taken at perfectly even intervals (true for the
+    10-minute collector cadence as long as there's no gap in that device's
+    readings), an underestimate if the device was offline for part of the
+    window, since avg is only over the readings that exist."""
     if not stats:
         return "No stats data."
     lines = []
     for device, s in stats.items():
-        energy_kwh = s.avg * hours / 1000
+        min_kw, max_kw, avg_kw = s.min / 1000, s.max / 1000, s.avg / 1000
+        energy_kwh = avg_kw * hours
         lines.append(
-            f"{device}: min={s.min:g} max={s.max:g} avg={s.avg:.2f} "
+            f"{device}: min={min_kw:.3f} max={max_kw:.3f} avg={avg_kw:.3f} kW "
             f"(n={s.count}), estimated energy used={energy_kwh:.2f} kWh"
         )
     return "\n".join(lines)
@@ -105,7 +109,16 @@ class AiAgent:
     # extra devices (e.g. "Light Bulb", "Computer") instead of reporting
     # just what the data actually contained.
     prompt_template_history_power_last_hours = "Summarize power usage readings for the last {hours} hours in 2-3 short sentences total. \
-	Report one line per device, using the exact device name as given below - do not rename, translate, or invent devices. Only cover devices listed below; if only one is listed, report only that one. For each device, report its typical (average) usage, its peak, and its estimated total energy used in kWh exactly as given below - do not recompute it. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
+	Report one line per device, using the exact device name as given below - do not rename, translate, or invent devices. Only cover devices listed below; if only one is listed, report only that one. For each device, report its typical (average) usage and its peak, both in kW, and its estimated total energy used in kWh exactly as given below - do not recompute it. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
+    # Used instead of the template above whenever exactly one device is
+    # being summarized (the device= filter, or just one device happening to
+    # be the only one with data in the window) - "only one is listed,
+    # report only that one" above still wasn't enough of a guardrail: asked
+    # to summarize "each device" from a single data line, the small model
+    # reliably invented extra ones anyway (e.g. a "Fridge" and "AirCon
+    # Unit" that don't exist on this install). Framing the task as "this
+    # one device" rather than "each device" removes the opening for that.
+    prompt_template_history_power_last_hours_one_device = "Summarize this one device's power usage for the last {hours} hours in 1-2 short sentences: its typical (average) usage and its peak, both in kW, and its estimated total energy used in kWh, exactly as given below - do not recompute them. Do not mention, invent, or compare to any other device - there is only this one. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
     prompt_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
@@ -219,8 +232,15 @@ class AiAgent:
         )
         return self.model_small.chat_once(prompt), graphs
 
+    def list_power_devices(self) -> list[str]:
+        """Device/sensor names summarize_history_power_last_hours' `device`
+        filter will accept - a thin passthrough to the storage layer (no
+        model call), for a caller (e.g. the web client) that wants to offer
+        a picker instead of guessing names."""
+        return self.storage.list_power_sensors()
+
     def summarize_history_power_last_hours(
-        self, hours: int, graph: bool = False
+        self, hours: int, graph: bool = False, device: str | None = None
     ) -> tuple[str, dict[str, Path]]:
         """Ask model_small for a plain-language summary of power usage over
         the last `hours` - min/max/avg/count plus an estimated total energy
@@ -238,25 +258,46 @@ class AiAgent:
         There is no separate "last days"/"last month" call - callers asking
         about a longer window (e.g. "last month") just pass a bigger `hours`
         (e.g. 24*30); the query and prompt scale the same way regardless of
-        window size. Returns (summary, graphs) - graphs is empty unless
-        graph=True, in which case it holds one PNG with one line per device,
-        from the same by_sensor grouping via get_history_last_hours()."""
+        window size.
+
+        `device` narrows the summary to one sensor name (see
+        list_power_devices for the valid names), matched case-insensitively;
+        omit it to summarize every device, as before. Filtering happens
+        here, after the same by-device query every call already makes,
+        rather than as a new locations-style query filter - the full result
+        set is one query either way, and a wrong/stale device name then
+        just means "no data" instead of a query-level error. Whenever
+        exactly one device ends up in `stats` - because `device` narrowed
+        it there, or because only one device happened to have data in the
+        window - prompt_template_history_power_last_hours_one_device is
+        used instead of the multi-device template; see its comment for why.
+
+        Returns (summary, graphs) - graphs is empty unless graph=True, in
+        which case it holds one PNG with one line per device, from the same
+        by_sensor grouping via get_history_last_hours()."""
         stats = self.storage.get_stats_last_hours("power", hours, by_sensor=True)
+        if device:
+            stats = {k: v for k, v in stats.items() if k.lower() == device.lower()}
         if not stats:
-            return self.prompt_no_data, {}
+            message = f"No power data for device '{device}'." if device else self.prompt_no_data
+            return message, {}
 
         graphs: dict[str, Path] = {}
         if graph:
             history = self.storage.get_history_last_hours("power", hours, by_sensor=True)
+            if device:
+                history = {k: v for k, v in history.items() if k.lower() == device.lower()}
             try:
                 graphs = self._grapher.plot_metrics(history, metric="power")
             except GraphError:
                 pass  # nothing to plot - the text summary still goes out
 
-        prompt = (
-            self.prompt_template_history_power_last_hours.format(hours=hours)
-            + _format_power_stats_with_energy(stats, hours)
+        template = (
+            self.prompt_template_history_power_last_hours_one_device
+            if len(stats) == 1
+            else self.prompt_template_history_power_last_hours
         )
+        prompt = template.format(hours=hours) + _format_power_stats_with_energy(stats, hours)
         return self.model_small.chat_once(prompt), graphs
 
     def summarize_outside_for_today(self, graph: bool = False) -> tuple[str, dict[str, Path]]:

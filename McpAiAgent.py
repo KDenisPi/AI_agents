@@ -57,6 +57,23 @@ _HOURS_SCHEMA = {
     },
 }
 
+# power_last_hours only - outside_last_hours has one weather station, so a
+# device filter would have nothing to disambiguate.
+_POWER_HOURS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        **_HOURS_SCHEMA["properties"],
+        "device": {
+            "type": "string",
+            "description": (
+                "Limit the summary to one device's exact name (e.g. 'DK "
+                "PC'), instead of every power-monitored device. Omit it "
+                "when the question doesn't name a specific device."
+            ),
+        },
+    },
+}
+
 # How long to wait for an accepted request to finish before giving up -
 # these are model calls (AiAgent.model_small), not database reads, so a
 # single one can legitimately take tens of seconds.
@@ -149,17 +166,18 @@ class McpAiAgentServer:
                     "Use this for 'power usage today', 'how much power/electricity "
                     "did X use today/this week/this month/over the last N hours', "
                     "'how many kWh did X use', or any question about typical/peak "
-                    "wattage history or total energy consumed. Historical power "
-                    "usage per device over time - typical and peak wattage, plus "
-                    "estimated total energy used in kWh, over the last N hours "
-                    "(default 24, which covers 'today'; pass a bigger N, e.g. 720, "
-                    "for 'last month'). This is the only source with power usage "
-                    "over time / trends / totals; a device's current/instantaneous "
-                    "wattage from a smart-outlet attribute is not a substitute for "
-                    "this and cannot show usage or energy consumed 'today' or "
-                    "'over the last N hours' on its own."
+                    "power draw history or total energy consumed. Historical power "
+                    "usage per device over time - typical and peak power draw in "
+                    "kW, plus estimated total energy used in kWh, over the last N "
+                    "hours (default 24, which covers 'today'; pass a bigger N, e.g. "
+                    "720, for 'last month'). Pass `device` to limit this to one "
+                    "named device instead of every one. This is the only source "
+                    "with power usage over time / trends / totals; a device's "
+                    "current/instantaneous reading from a smart-outlet attribute is "
+                    "not a substitute for this and cannot show usage or energy "
+                    "consumed 'today' or 'over the last N hours' on its own."
                 ),
-                inputSchema=_HOURS_SCHEMA,
+                inputSchema=_POWER_HOURS_SCHEMA,
                 annotations=_READ_ONLY,
             ),
         ]
@@ -194,6 +212,8 @@ class McpAiAgentServer:
         params = {"request_id": request_id}
         if "hours" in arguments and arguments["hours"] is not None:
             params["hours"] = str(arguments["hours"])
+        if "device" in arguments and arguments["device"] is not None:
+            params["device"] = str(arguments["device"])
 
         async with aiohttp.ClientSession(base_url=self._api_base) as session:
             async with session.get(endpoint, params=params) as response:
