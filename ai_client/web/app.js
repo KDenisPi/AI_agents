@@ -27,8 +27,12 @@ const audioToggle = document.getElementById("toggle-audio");
 const graphToggle = document.getElementById("toggle-graph");
 const datasourceSelect = document.getElementById("datasource-select");
 const datasourceButtons = Array.from(datasourceSelect.querySelectorAll(".seg-btn"));
+const powerModeRow = document.getElementById("power-mode-row");
+const powerModeSelect = document.getElementById("power-mode-select");
+const powerModeButtons = Array.from(powerModeSelect.querySelectorAll(".seg-btn"));
 const deviceRow = document.getElementById("device-row");
 const deviceSelect = document.getElementById("device-select");
+const rangeSection = document.getElementById("range-section");
 
 const metricPanel = document.getElementById("metric-panel");
 const metricSelect = document.getElementById("metric-select");
@@ -43,13 +47,19 @@ const audioPlayer = document.getElementById("audio-player");
 
 const lockable = [
   btnCurrent, btnBattery, btnOutsideToday, btnLastHours, hoursSelect, btnRange,
-  fromDateInput, toDateInput, audioToggle, graphToggle, deviceSelect, ...datasourceButtons,
+  fromDateInput, toDateInput, audioToggle, graphToggle, deviceSelect,
+  ...datasourceButtons, ...powerModeButtons,
 ];
 
 // Which endpoint "Last hours" and "Run range query" hit - "weather" for
 // /api/outside_last_hours, "power" for /api/power_last_hours. "Outside
 // today" is unaffected - there is no power equivalent of that endpoint.
 let dataSource = "weather";
+// Power only (see updatePowerUi): "summarized" is the existing
+// hours/range-based power_last_hours view; "instant" repurposes the same
+// "Last hours" button into a one-shot current_power reading, since a hours
+// window or date range has no meaning for a single latest value.
+let powerMode = "summarized";
 let locked = false;
 let requestStartedAt = 0;
 let pollTimer = null;
@@ -89,7 +99,7 @@ function init() {
   fromDateInput.value = isoDateLocal(weekAgo);
 
   applySettings(loadSettings());
-  updateDeviceRowVisibility();
+  updatePowerUi();
   loadPowerDevices();
 
   btnCurrent.addEventListener("click", requestCurrent);
@@ -102,6 +112,9 @@ function init() {
   datasourceButtons.forEach((btn) => {
     btn.addEventListener("click", () => setDataSource(btn.dataset.source));
   });
+  powerModeButtons.forEach((btn) => {
+    btn.addEventListener("click", () => setPowerMode(btn.dataset.mode));
+  });
 
   audioToggle.addEventListener("change", saveSettings);
   graphToggle.addEventListener("change", saveSettings);
@@ -109,7 +122,7 @@ function init() {
   deviceSelect.addEventListener("change", saveSettings);
 }
 
-// ---- Weather/Power data-source selector ----
+// ---- Weather/Power data-source selector, and Power's Instant/Summarized ----
 
 function setDataSource(source) {
   if (locked || source === dataSource) return;
@@ -117,14 +130,34 @@ function setDataSource(source) {
   datasourceButtons.forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.source === source);
   });
-  updateDeviceRowVisibility();
+  updatePowerUi();
   saveSettings();
 }
 
-function updateDeviceRowVisibility() {
-  // The device picker only means anything for Power - Weather has one
-  // station, nothing to narrow down.
-  deviceRow.hidden = dataSource !== "power";
+function setPowerMode(mode) {
+  if (locked || mode === powerMode) return;
+  powerMode = mode;
+  powerModeButtons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+  updatePowerUi();
+  saveSettings();
+}
+
+function updatePowerUi() {
+  const isPower = dataSource === "power";
+  const isInstant = isPower && powerMode === "instant";
+  // The device picker and Instant/Summarized toggle only mean anything for
+  // Power - Weather has one station, nothing to narrow down or snapshot.
+  powerModeRow.hidden = !isPower;
+  deviceRow.hidden = !isPower;
+  // Instant is a single latest reading - no hours window, no date range,
+  // so "Last hours" is repurposed into a one-shot button (see
+  // requestLastHours) and both hours-select and Run range query/From/To
+  // are hidden rather than left showing controls that do nothing.
+  hoursSelect.hidden = isInstant;
+  rangeSection.hidden = isInstant;
+  btnLastHours.textContent = isInstant ? "Current power" : "Last hours";
 }
 
 // ---- Power device picker ----
@@ -197,6 +230,13 @@ function applySettings(settings) {
       btn.classList.toggle("active", btn.dataset.source === dataSource);
     });
   }
+  // Same guard, for Power's Instant/Summarized toggle.
+  if (settings.powerMode && powerModeButtons.some((btn) => btn.dataset.mode === settings.powerMode)) {
+    powerMode = settings.powerMode;
+    powerModeButtons.forEach((btn) => {
+      btn.classList.toggle("active", btn.dataset.mode === powerMode);
+    });
+  }
   // The device list isn't loaded yet at this point (see loadPowerDevices) -
   // stash the name and let it apply the value once the real options exist.
   if (settings.device) pendingDeviceSetting = settings.device;
@@ -211,6 +251,7 @@ function saveSettings() {
         graph: graphToggle.checked,
         hours: hoursSelect.value,
         dataSource,
+        powerMode,
         device: deviceSelect.value,
       })
     );
@@ -273,20 +314,36 @@ function lastHoursEndpoint() {
   return dataSource === "power" ? "/api/power_last_hours" : "/api/outside_last_hours";
 }
 
-// Only meaningful for the Power source (see updateDeviceRowVisibility) -
-// "" (All devices) means no filter, same as omitting it entirely.
+// Only meaningful for the Power source (see updatePowerUi) - "" (All
+// devices) means no filter, same as omitting it entirely.
 function selectedDeviceParam() {
   return dataSource === "power" && deviceSelect.value ? deviceSelect.value : undefined;
 }
 
+// "Last hours" is repurposed into a one-shot "Current power" button when
+// Power's Instant mode is active (see updatePowerUi) - there's no hours
+// window to ask for a single latest reading, so this dispatches to
+// /api/current_power instead of the usual hours-based endpoints.
 function requestLastHours() {
   if (locked) return;
+  if (dataSource === "power" && powerMode === "instant") {
+    requestCurrentPower();
+    return;
+  }
   const requestId = buildRequestId();
   const hours = parseInt(hoursSelect.value, 10);
   const params = { request_id: requestId, hours, device: selectedDeviceParam() };
   if (audioToggle.checked) params.voice = true;
   if (graphToggle.checked) params.graph = true;
   startRequest(buildUrl(lastHoursEndpoint(), params), requestId);
+}
+
+function requestCurrentPower() {
+  if (locked) return;
+  const requestId = buildRequestId();
+  const params = { request_id: requestId, device: selectedDeviceParam() };
+  if (audioToggle.checked) params.voice = true;
+  startRequest(buildUrl("/api/current_power", params), requestId);
 }
 
 function requestRange() {

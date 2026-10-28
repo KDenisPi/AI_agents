@@ -145,16 +145,29 @@ class MetricStorageClickhouse:
         return list(client.query(query, parameters=parameters).named_results())
 
     def get_current(
-        self, locations: list[str] | None = None, metrics: list[str] | None = None
+        self,
+        locations: list[str] | None = None,
+        metrics: list[str] | None = None,
+        by_sensor: bool = False,
     ) -> dict[str, dict[str, MetricValue]]:
         """Latest value of every metric reported at each location, keyed by
         location then metric. Defaults to every location; pass `locations`
         or `metrics` to narrow it. If several sensors at a location report
-        the same metric, the most recent wins (argMax on mdatatime)."""
+        the same metric, the most recent wins (argMax on mdatatime) -
+        unless by_sensor=True, see below.
+
+        by_sensor=True keys the result by sensor name instead of location,
+        same reasoning and same flag as get_stats/get_history: several
+        distinctly-named power sensors can share one location, so the
+        default location grouping above picks one sensor's value per
+        metric (whichever reported most recently) rather than keeping each
+        device's own latest reading - fine for a single weather station,
+        wrong for "what is each power device using right now"."""
         current: dict[str, dict[str, MetricValue]] = {}
+        key_col = "s.name" if by_sensor else "l.location"
         for table, metric_filter in _plan_tables(metrics):
             query = (
-                "SELECT l.location AS location, m.metric AS metric, "
+                f"SELECT {key_col} AS grp, m.metric AS metric, "
                 "argMax(me.value, me.mdatatime) AS value, "
                 "toTimeZone(max(me.mdatatime), {tz:String}) AS taken_at, "
                 "argMax(s.name, me.mdatatime) AS sensor_name "
@@ -163,7 +176,7 @@ class MetricStorageClickhouse:
                 "JOIN sensor s ON s.sensorid = me.sensor_sensorid "
                 "JOIN location l ON l.locid = s.location_locid "
                 "WHERE 1" + _filters(metric_filter, locations) +
-                " GROUP BY l.location, m.metric"
+                f" GROUP BY {key_col}, m.metric"
             )
             parameters = {"tz": self._config.local_timezone}
             if metric_filter:
@@ -171,7 +184,7 @@ class MetricStorageClickhouse:
             if locations:
                 parameters["locs"] = locations
             for row in self._query(query, parameters):
-                by_metric = current.setdefault(row["location"], {})
+                by_metric = current.setdefault(row["grp"], {})
                 metric = row["metric"]
                 if metric not in by_metric:
                     by_metric[metric] = MetricValue(

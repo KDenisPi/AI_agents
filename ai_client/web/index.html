@@ -10,7 +10,7 @@
   <header id="header">
     <h1 id="title">Home weather agent</h1>
     <div id="header-toggles">
-      <label class="header-toggle" title="Current state, Battery status, Outside today, Last hours, Range">
+      <label class="header-toggle" title="Current state, Battery status, Outside today, Last hours, Range, Current power">
         <span class="toggle-text">Audio</span>
         <span class="switch">
           <input type="checkbox" id="toggle-audio">
@@ -47,6 +47,13 @@
             <button type="button" class="seg-btn" data-source="power">Power</button>
           </div>
         </div>
+        <div class="field-row" id="power-mode-row" hidden>
+          <label>Power:</label>
+          <div class="segmented" id="power-mode-select">
+            <button type="button" class="seg-btn" data-mode="instant">Instant</button>
+            <button type="button" class="seg-btn active" data-mode="summarized">Summarized</button>
+          </div>
+        </div>
         <div class="field-row" id="device-row" hidden>
           <label for="device-select">Device:</label>
           <select id="device-select">
@@ -57,14 +64,16 @@
           <button id="btn-last-hours" class="req-btn grow">Last hours</button>
           <select id="hours-select" class="hours-select"></select>
         </div>
-        <button id="btn-range" class="req-btn full">Run range query</button>
-        <div class="field-row">
-          <label for="from-date">From:</label>
-          <input type="date" id="from-date">
-        </div>
-        <div class="field-row">
-          <label for="to-date">To:</label>
-          <input type="date" id="to-date">
+        <div id="range-section">
+          <button id="btn-range" class="req-btn full">Run range query</button>
+          <div class="field-row">
+            <label for="from-date">From:</label>
+            <input type="date" id="from-date">
+          </div>
+          <div class="field-row">
+            <label for="to-date">To:</label>
+            <input type="date" id="to-date">
+          </div>
         </div>
       </section>
 

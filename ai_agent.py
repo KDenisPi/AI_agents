@@ -19,7 +19,7 @@ from pathlib import Path
 
 from Config import Config
 from OllamaClient import OllamaClient, session_id_for
-from ai_agent_storage import MetricStats, format_current, format_history, format_stats, format_today_outside
+from ai_agent_storage import MetricStats, MetricValue, format_current, format_history, format_stats, format_today_outside
 from ai_agent_storage_clickhouse import MetricStorageClickhouse
 from ai_server_graph import GraphError, MetricGrapher
 from text_to_voice import TextToVoice
@@ -50,6 +50,26 @@ def _format_power_stats_with_energy(stats: dict[str, MetricStats], hours: int) -
             f"(n={s.count}), estimated energy used={energy_kwh:.2f} kWh"
         )
     return "\n".join(lines)
+
+
+def _format_current_power_kw(current: dict[str, dict[str, MetricValue]]) -> str:
+    """Like format_current(), but scoped to the single "power" metric
+    get_current(metrics=["power"], by_sensor=True) was called with, and
+    converted from watts to kW - same reasoning as
+    _format_power_stats_with_energy, for the instantaneous counterpart to
+    it. One line per device: "<name>: <value> kW (<taken_at>)"."""
+    if not current:
+        return "No current data."
+    lines = []
+    for device, metrics in current.items():
+        value = metrics.get("power")
+        if value is None:
+            continue
+        lines.append(
+            f"{device}: {value.value / 1000:.3f} kW "
+            f"(taken at {value.taken_at.strftime('%Y-%m-%d %H:%M:%S')})"
+        )
+    return "\n".join(lines) if lines else "No current data."
 
 
 class AiAgent:
@@ -119,6 +139,15 @@ class AiAgent:
     # Unit" that don't exist on this install). Framing the task as "this
     # one device" rather than "each device" removes the opening for that.
     prompt_template_history_power_last_hours_one_device = "Summarize this one device's power usage for the last {hours} hours in 1-2 short sentences: its typical (average) usage and its peak, both in kW, and its estimated total energy used in kWh, exactly as given below - do not recompute them. Do not mention, invent, or compare to any other device - there is only this one. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
+    # Instant counterpart to the two power_last_hours templates above - one
+    # current reading per device rather than stats over a window, so there
+    # is no typical/peak/energy to report, only each device's latest value.
+    # Same "only/one device listed" and "do not invent" guardrails as those
+    # two, for the same small-model failure mode (see
+    # prompt_template_history_power_last_hours_one_device's comment).
+    prompt_template_current_power = "Report the current power draw of each device in 2-3 short sentences total. \
+	Report one line per device, using the exact device name as given below - do not rename, translate, or invent devices. Only cover devices listed below; if only one is listed, report only that one. Report each device's current usage in kW exactly as given below - do not recompute it. Do not mention the specific date or time each reading was taken - these are current readings, so there is no need to say when. No notes or closing remarks.\n"
+    prompt_template_current_power_one_device = "Report this one device's current power draw in 1 short sentence: its current usage in kW, exactly as given below - do not recompute it. Do not mention, invent, or compare to any other device - there is only this one. Do not mention the specific date or time the reading was taken - this is a current reading, so there is no need to say when. No notes or closing remarks.\n"
     prompt_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
@@ -196,6 +225,34 @@ class AiAgent:
         ):
             return self.prompt_battery_all_normal
         prompt = (self.prompt_template_battery_status + format_current(current))
+        return self.model_small.chat_once(prompt)
+
+    def summarize_current_power(self, device: str | None = None) -> str:
+        """Ask model_small for a plain-language summary of each power
+        device's latest reading, in kW - the instant counterpart to
+        summarize_history_power_last_hours (typical/peak/energy over a
+        window; this is just the single latest value). Uses
+        get_current(metrics=["power"], by_sensor=True) rather than
+        summarize_current's location grouping - several distinctly-named
+        power sensors can share one location, and location grouping would
+        pick whichever last reported instead of keeping each device's own
+        reading (see get_current's by_sensor docstring).
+
+        `device` narrows this to one sensor name, same matching as
+        summarize_history_power_last_hours' `device` - see that method's
+        docstring for the matching/one-device-prompt details this mirrors."""
+        current = self.storage.get_current(metrics=["power"], by_sensor=True)
+        if device:
+            current = {k: v for k, v in current.items() if k.lower() == device.lower()}
+        if not current:
+            return f"No power data for device '{device}'." if device else self.prompt_no_data
+
+        template = (
+            self.prompt_template_current_power_one_device
+            if len(current) == 1
+            else self.prompt_template_current_power
+        )
+        prompt = template + _format_current_power_kw(current)
         return self.model_small.chat_once(prompt)
 
     def summarize_history_outside_last_hours(

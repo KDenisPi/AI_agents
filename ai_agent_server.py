@@ -34,6 +34,16 @@ Client to AI_AGENT:
         levels (AiAgent.summarize_current_battery). voice and callback
         work exactly as they do on /api/current.
 
+    GET /api/current_power[?request_id=<id>][&device=<name>][&voice[=<name>]][&callback]
+        Same 200/503/500 contract as /api/current. Summarizes each power
+        device's latest reading in kW (AiAgent.summarize_current_power,
+        i.e. MetricStorage.get_current(metrics=["power"], by_sensor=True)) -
+        the instant counterpart to /api/power_last_hours' typical/peak/
+        energy over a window. device narrows this to one sensor name (see
+        /api/power_devices); omit it to summarize every device. No graph -
+        there is nothing to plot for a single reading. voice and callback
+        work exactly as they do on /api/current.
+
     GET /api/outside_today[?request_id=<id>][&voice[=<name>]][&graph][&callback]
         Same 200/503/500 contract as /api/current. Summarizes today's
         outside temperature+humidity (AiAgent.summarize_outside_for_today,
@@ -460,6 +470,74 @@ def make_app(config: Config) -> Starlette:
         if wants_callback:
             await _post_callback(config, payload)
 
+    async def handle_current_power(request: Request) -> Response:
+        _log_request(request)
+        started = time.monotonic()
+        request_id = request.query_params.get("request_id")
+        # Same reasoning as handle_current above.
+        wants_audio = "voice" in request.query_params
+        voice = request.query_params.get("voice") or None
+        wants_callback = "callback" in request.query_params
+        device = request.query_params.get("device") or None
+        try:
+            reachable = await asyncio.to_thread(_ollama_reachable, config.ollama_url_1)
+        except Exception as e:
+            logger.exception("Could not check Ollama availability")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        if not reachable:
+            return JSONResponse({"error": "model not available"}, status_code=503)
+
+        tracked_id = _track_pending(request.app, request_id)
+        _spawn(
+            _run_current_power(
+                config,
+                request.app,
+                tracked_id,
+                request_id,
+                wants_audio,
+                voice,
+                wants_callback,
+                device,
+                started,
+                # Captured here because the callback is built long after the
+                # request object is gone.
+                str(request.base_url),
+            )
+        )
+        body = {"accepted": True}
+        if request_id:
+            body["request_id"] = request_id
+        return JSONResponse(body, status_code=200)
+
+    async def _run_current_power(
+        config: Config,
+        app: Starlette,
+        tracked_id: str,
+        request_id: str | None,
+        wants_audio: bool,
+        voice: str | None,
+        wants_callback: bool,
+        device: str | None,
+        started: float,
+        base_url: str,
+    ) -> None:
+        agent = app.state.agent
+        try:
+            text = await asyncio.to_thread(agent.summarize_current_power, device)
+            payload = {"text": text, "audio_url": None}
+        except Exception as e:
+            logger.exception("summarize_current_power failed")
+            payload = {"error": str(e)}
+        else:
+            if wants_audio:
+                await _add_audio(config, agent, payload, text, voice, base_url)
+        if request_id:
+            payload["request_id"] = request_id
+        _store_result(app, tracked_id, payload)
+        _log_done("/api/current_power", request_id, payload, started)
+        if wants_callback:
+            await _post_callback(config, payload)
+
     async def handle_outside_today(request: Request) -> Response:
         _log_request(request)
         started = time.monotonic()
@@ -760,6 +838,7 @@ def make_app(config: Config) -> Starlette:
         routes=[
             Route("/api/current", handle_current, methods=["GET"]),
             Route("/api/current_battery", handle_current_battery, methods=["GET"]),
+            Route("/api/current_power", handle_current_power, methods=["GET"]),
             Route("/api/outside_today", handle_outside_today, methods=["GET"]),
             Route("/api/outside_last_hours", handle_outside_last_hours, methods=["GET"]),
             Route("/api/power_last_hours", handle_power_last_hours, methods=["GET"]),

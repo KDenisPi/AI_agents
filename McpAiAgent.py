@@ -57,21 +57,24 @@ _HOURS_SCHEMA = {
     },
 }
 
-# power_last_hours only - outside_last_hours has one weather station, so a
-# device filter would have nothing to disambiguate.
+# Shared by current_power and power_last_hours - outside_last_hours has one
+# weather station, so a device filter would have nothing to disambiguate.
+_DEVICE_PROPERTY = {
+    "device": {
+        "type": "string",
+        "description": (
+            "Limit this to one device's exact name (e.g. 'DK PC'), instead "
+            "of every power-monitored device. Omit it when the question "
+            "doesn't name a specific device."
+        ),
+    },
+}
+
+_DEVICE_ONLY_SCHEMA = {"type": "object", "properties": _DEVICE_PROPERTY}
+
 _POWER_HOURS_SCHEMA = {
     "type": "object",
-    "properties": {
-        **_HOURS_SCHEMA["properties"],
-        "device": {
-            "type": "string",
-            "description": (
-                "Limit the summary to one device's exact name (e.g. 'DK "
-                "PC'), instead of every power-monitored device. Omit it "
-                "when the question doesn't name a specific device."
-            ),
-        },
-    },
+    "properties": {**_HOURS_SCHEMA["properties"], **_DEVICE_PROPERTY},
 }
 
 # How long to wait for an accepted request to finish before giving up -
@@ -161,6 +164,21 @@ class McpAiAgentServer:
                 annotations=_READ_ONLY,
             ),
             Tool(
+                name="current_power",
+                description=(
+                    "Use this for 'what is X using right now', 'current power "
+                    "draw', or 'how many watts/kW is X using now' - the "
+                    "instantaneous reading, not a trend or total. Current power "
+                    "draw in kW per device, from each device's latest reading. "
+                    "Pass `device` to limit this to one named device instead of "
+                    "every one. For usage over time, a total, or "
+                    "'today'/'this week'/'this month', use power_last_hours "
+                    "instead - this tool only has the single latest reading."
+                ),
+                inputSchema=_DEVICE_ONLY_SCHEMA,
+                annotations=_READ_ONLY,
+            ),
+            Tool(
                 name="power_last_hours",
                 description=(
                     "Use this for 'power usage today', 'how much power/electricity "
@@ -185,6 +203,7 @@ class McpAiAgentServer:
     _ENDPOINTS = {
         "current_status": "/api/current",
         "current_battery": "/api/current_battery",
+        "current_power": "/api/current_power",
         "outside_today": "/api/outside_today",
         "outside_last_hours": "/api/outside_last_hours",
         "power_last_hours": "/api/power_last_hours",
