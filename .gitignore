@@ -1,7 +1,12 @@
 __pycache__/
 server.log
 .env
+env.txt
 db/weather_users.sql
 voice_output/
 graph_output/
 data/clickhouse/
+logs/
+ollama_sessions/
+.cache/
+.nv/
