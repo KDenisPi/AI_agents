@@ -46,7 +46,12 @@ _HOURS_SCHEMA = {
     "properties": {
         "hours": {
             "type": "integer",
-            "description": "How many hours of history to summarize (default 24).",
+            "description": (
+                "How many hours of history to summarize (default 24). Not "
+                "limited to a day - pass a bigger number for a longer "
+                "window, e.g. 168 for 'the last week' or 720 for 'the last "
+                "month'."
+            ),
             "minimum": 1,
         },
     },
@@ -141,14 +146,17 @@ class McpAiAgentServer:
             Tool(
                 name="power_last_hours",
                 description=(
-                    "Use this for 'power usage today', 'how much power did X use "
-                    "today', 'power usage over the last N hours', or any question "
-                    "about typical/peak wattage history. Historical power usage per "
-                    "device over time - typical and peak wattage over the last N "
-                    "hours (default 24, which covers 'today'). This is the only "
-                    "source with power usage over time / trends; a device's "
-                    "current/instantaneous wattage from a smart-outlet attribute is "
-                    "not a substitute for this and cannot show usage 'today' or "
+                    "Use this for 'power usage today', 'how much power/electricity "
+                    "did X use today/this week/this month/over the last N hours', "
+                    "'how many kWh did X use', or any question about typical/peak "
+                    "wattage history or total energy consumed. Historical power "
+                    "usage per device over time - typical and peak wattage, plus "
+                    "estimated total energy used in kWh, over the last N hours "
+                    "(default 24, which covers 'today'; pass a bigger N, e.g. 720, "
+                    "for 'last month'). This is the only source with power usage "
+                    "over time / trends / totals; a device's current/instantaneous "
+                    "wattage from a smart-outlet attribute is not a substitute for "
+                    "this and cannot show usage or energy consumed 'today' or "
                     "'over the last N hours' on its own."
                 ),
                 inputSchema=_HOURS_SCHEMA,

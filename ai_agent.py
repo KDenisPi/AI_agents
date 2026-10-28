@@ -19,10 +19,33 @@ from pathlib import Path
 
 from Config import Config
 from OllamaClient import OllamaClient, session_id_for
-from ai_agent_storage import format_current, format_history, format_stats, format_today_outside
+from ai_agent_storage import MetricStats, format_current, format_history, format_stats, format_today_outside
 from ai_agent_storage_clickhouse import MetricStorageClickhouse
 from ai_server_graph import GraphError, MetricGrapher
 from text_to_voice import TextToVoice
+
+
+def _format_power_stats_with_energy(stats: dict[str, MetricStats], hours: int) -> str:
+    """Like format_stats(), but with an estimated total energy figure (kWh)
+    appended to each device's line - min/max/avg/count alone answer "how
+    much power does X typically draw", not "how much power did X use", which
+    needs a quantity integrated over the window rather than an instantaneous
+    one. MetricStats carries no running total, only avg/min/max/count, so
+    this estimates it as avg_watts * hours / 1000 - exact if readings were
+    taken at perfectly even intervals (true for the 10-minute collector
+    cadence as long as there's no gap in that device's readings), an
+    underestimate if the device was offline for part of the window, since
+    avg is only over the readings that exist."""
+    if not stats:
+        return "No stats data."
+    lines = []
+    for device, s in stats.items():
+        energy_kwh = s.avg * hours / 1000
+        lines.append(
+            f"{device}: min={s.min:g} max={s.max:g} avg={s.avg:.2f} "
+            f"(n={s.count}), estimated energy used={energy_kwh:.2f} kWh"
+        )
+    return "\n".join(lines)
 
 
 class AiAgent:
@@ -82,7 +105,7 @@ class AiAgent:
     # extra devices (e.g. "Light Bulb", "Computer") instead of reporting
     # just what the data actually contained.
     prompt_template_history_power_last_hours = "Summarize power usage readings for the last {hours} hours in 2-3 short sentences total. \
-	Report one line per device, using the exact device name as given below - do not rename, translate, or invent devices. Only cover devices listed below; if only one is listed, report only that one. For each device, report its typical (average) usage and its peak. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
+	Report one line per device, using the exact device name as given below - do not rename, translate, or invent devices. Only cover devices listed below; if only one is listed, report only that one. For each device, report its typical (average) usage, its peak, and its estimated total energy used in kWh exactly as given below - do not recompute it. Do not mention how many readings were taken, sampling intervals, or anything about how the data was collected. No notes or closing remarks.\n"
     prompt_no_data = "No current data available."
 
     def __init__(self, config: Config, session_id: str | None = None):
@@ -200,19 +223,24 @@ class AiAgent:
         self, hours: int, graph: bool = False
     ) -> tuple[str, dict[str, Path]]:
         """Ask model_small for a plain-language summary of power usage over
-        the last `hours` - min/max/avg/count per device, via
-        get_stats_last_hours("power", hours, by_sensor=True). Unlike
-        summarize_history_outside_last_hours, this is a single-metric call
-        (no metrics list), so storage returns the classic key -> stats shape
-        rather than nesting by metric. by_sensor=True keys that by sensor
-        name rather than location, since several distinctly-named power
-        sensors can share one location - location grouping would blend
+        the last `hours` - min/max/avg/count plus an estimated total energy
+        used (kWh) per device, via get_stats_last_hours("power", hours,
+        by_sensor=True) (see _format_power_stats_with_energy for how the
+        energy figure is derived - it's an estimate, not a metered total).
+        Unlike summarize_history_outside_last_hours, this is a single-metric
+        call (no metrics list), so storage returns the classic key -> stats
+        shape rather than nesting by metric. by_sensor=True keys that by
+        sensor name rather than location, since several distinctly-named
+        power sensors can share one location - location grouping would blend
         their readings into one bucket, which is both wrong for the
         text summary and what previously caused the model to invent
         devices that don't exist (see prompt_template_history_power_last_hours).
-        Returns (summary, graphs) - graphs is empty unless graph=True, in
-        which case it holds one PNG with one line per device, from the same
-        by_sensor grouping via get_history_last_hours()."""
+        There is no separate "last days"/"last month" call - callers asking
+        about a longer window (e.g. "last month") just pass a bigger `hours`
+        (e.g. 24*30); the query and prompt scale the same way regardless of
+        window size. Returns (summary, graphs) - graphs is empty unless
+        graph=True, in which case it holds one PNG with one line per device,
+        from the same by_sensor grouping via get_history_last_hours()."""
         stats = self.storage.get_stats_last_hours("power", hours, by_sensor=True)
         if not stats:
             return self.prompt_no_data, {}
@@ -227,7 +255,7 @@ class AiAgent:
 
         prompt = (
             self.prompt_template_history_power_last_hours.format(hours=hours)
-            + format_stats(stats)
+            + _format_power_stats_with_energy(stats, hours)
         )
         return self.model_small.chat_once(prompt), graphs
 
