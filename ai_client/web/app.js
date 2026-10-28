@@ -535,9 +535,18 @@ function applyAudio(payload) {
   });
 }
 
+// The server's metric order is alphabetical (humidity before temperature -
+// see get_history()'s "ORDER BY ... m.metric ASC"), but Temperature is the
+// one worth seeing by default. Stable sort, so it only moves temperature to
+// the front; everything else (including power's device names, which never
+// match) keeps its original relative order.
+function orderMetricNames(names) {
+  return [...names].sort((a, b) => (a === "temperature" ? -1 : b === "temperature" ? 1 : 0));
+}
+
 function applyGraphs(payload) {
   const graphs = payload.graphs || {};
-  const metricNames = Object.keys(graphs);
+  const metricNames = orderMetricNames(Object.keys(graphs));
   graphsForCurrentResult = graphs;
 
   const graphWanted = graphToggle.checked && metricNames.length > 0;
