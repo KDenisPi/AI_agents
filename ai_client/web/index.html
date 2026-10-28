@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=1024, initial-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=1920, initial-scale=1, user-scalable=no">
   <title>Home weather agent</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -46,6 +46,12 @@
             <button type="button" class="seg-btn active" data-source="weather">Weather</button>
             <button type="button" class="seg-btn" data-source="power">Power</button>
           </div>
+        </div>
+        <div class="field-row" id="device-row" hidden>
+          <label for="device-select">Device:</label>
+          <select id="device-select">
+            <option value="">All devices</option>
+          </select>
         </div>
         <div class="row">
           <button id="btn-last-hours" class="req-btn grow">Last hours</button>

@@ -27,6 +27,8 @@ const audioToggle = document.getElementById("toggle-audio");
 const graphToggle = document.getElementById("toggle-graph");
 const datasourceSelect = document.getElementById("datasource-select");
 const datasourceButtons = Array.from(datasourceSelect.querySelectorAll(".seg-btn"));
+const deviceRow = document.getElementById("device-row");
+const deviceSelect = document.getElementById("device-select");
 
 const metricPanel = document.getElementById("metric-panel");
 const metricSelect = document.getElementById("metric-select");
@@ -41,7 +43,7 @@ const audioPlayer = document.getElementById("audio-player");
 
 const lockable = [
   btnCurrent, btnBattery, btnOutsideToday, btnLastHours, hoursSelect, btnRange,
-  fromDateInput, toDateInput, audioToggle, graphToggle, ...datasourceButtons,
+  fromDateInput, toDateInput, audioToggle, graphToggle, deviceSelect, ...datasourceButtons,
 ];
 
 // Which endpoint "Last hours" and "Run range query" hit - "weather" for
@@ -55,6 +57,14 @@ let elapsedTimer = null;
 let timeoutTimer = null;
 let graphsForCurrentResult = {};
 
+// Beyond this, "hours" stops being a per-hour dropdown and switches to a
+// handful of named presets - nobody picks "1 month" one hour at a time.
+const HOURS_PRESETS = [
+  { hours: 168, label: "1 week" },
+  { hours: 336, label: "2 weeks" },
+  { hours: 720, label: "1 month" },
+];
+
 function init() {
   for (let h = 1; h <= 48; h++) {
     const opt = document.createElement("option");
@@ -62,6 +72,15 @@ function init() {
     opt.textContent = `${h}h`;
     hoursSelect.appendChild(opt);
   }
+  const presetGroup = document.createElement("optgroup");
+  presetGroup.label = "Longer";
+  for (const { hours, label } of HOURS_PRESETS) {
+    const opt = document.createElement("option");
+    opt.value = String(hours);
+    opt.textContent = label;
+    presetGroup.appendChild(opt);
+  }
+  hoursSelect.appendChild(presetGroup);
   hoursSelect.value = "12";
 
   const today = new Date();
@@ -70,6 +89,8 @@ function init() {
   fromDateInput.value = isoDateLocal(weekAgo);
 
   applySettings(loadSettings());
+  updateDeviceRowVisibility();
+  loadPowerDevices();
 
   btnCurrent.addEventListener("click", requestCurrent);
   btnBattery.addEventListener("click", requestBattery);
@@ -85,6 +106,7 @@ function init() {
   audioToggle.addEventListener("change", saveSettings);
   graphToggle.addEventListener("change", saveSettings);
   hoursSelect.addEventListener("change", saveSettings);
+  deviceSelect.addEventListener("change", saveSettings);
 }
 
 // ---- Weather/Power data-source selector ----
@@ -95,7 +117,48 @@ function setDataSource(source) {
   datasourceButtons.forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.source === source);
   });
+  updateDeviceRowVisibility();
   saveSettings();
+}
+
+function updateDeviceRowVisibility() {
+  // The device picker only means anything for Power - Weather has one
+  // station, nothing to narrow down.
+  deviceRow.hidden = dataSource !== "power";
+}
+
+// ---- Power device picker ----
+
+// Settings are applied before this list exists (fetched async below), so
+// the saved device name is held here and applied once loadPowerDevices()
+// has populated the <select> with real options to match it against.
+let pendingDeviceSetting = null;
+
+async function loadPowerDevices() {
+  try {
+    const response = await fetch("/api/power_devices");
+    if (!response.ok) return;
+    const body = await response.json();
+    const devices = body.devices || [];
+    deviceSelect.innerHTML = "";
+    const allOpt = document.createElement("option");
+    allOpt.value = "";
+    allOpt.textContent = "All devices";
+    deviceSelect.appendChild(allOpt);
+    for (const name of devices) {
+      const opt = document.createElement("option");
+      opt.value = name;
+      opt.textContent = name;
+      deviceSelect.appendChild(opt);
+    }
+    if (pendingDeviceSetting && devices.includes(pendingDeviceSetting)) {
+      deviceSelect.value = pendingDeviceSetting;
+    }
+  } catch (err) {
+    // No device list is not fatal - "All devices" (the default, already in
+    // the markup as a fallback option) still works.
+    console.warn("Could not load power device list:", err);
+  }
 }
 
 function isoDateLocal(d) {
@@ -134,6 +197,9 @@ function applySettings(settings) {
       btn.classList.toggle("active", btn.dataset.source === dataSource);
     });
   }
+  // The device list isn't loaded yet at this point (see loadPowerDevices) -
+  // stash the name and let it apply the value once the real options exist.
+  if (settings.device) pendingDeviceSetting = settings.device;
 }
 
 function saveSettings() {
@@ -145,6 +211,7 @@ function saveSettings() {
         graph: graphToggle.checked,
         hours: hoursSelect.value,
         dataSource,
+        device: deviceSelect.value,
       })
     );
   } catch (err) {
@@ -206,11 +273,17 @@ function lastHoursEndpoint() {
   return dataSource === "power" ? "/api/power_last_hours" : "/api/outside_last_hours";
 }
 
+// Only meaningful for the Power source (see updateDeviceRowVisibility) -
+// "" (All devices) means no filter, same as omitting it entirely.
+function selectedDeviceParam() {
+  return dataSource === "power" && deviceSelect.value ? deviceSelect.value : undefined;
+}
+
 function requestLastHours() {
   if (locked) return;
   const requestId = buildRequestId();
   const hours = parseInt(hoursSelect.value, 10);
-  const params = { request_id: requestId, hours };
+  const params = { request_id: requestId, hours, device: selectedDeviceParam() };
   if (audioToggle.checked) params.voice = true;
   if (graphToggle.checked) params.graph = true;
   startRequest(buildUrl(lastHoursEndpoint(), params), requestId);
@@ -230,7 +303,7 @@ function requestRange() {
     return;
   }
   const requestId = buildRequestId();
-  const params = { request_id: requestId, hours };
+  const params = { request_id: requestId, hours, device: selectedDeviceParam() };
   if (audioToggle.checked) params.voice = true;
   if (graphToggle.checked) params.graph = true;
   startRequest(buildUrl(lastHoursEndpoint(), params), requestId);
