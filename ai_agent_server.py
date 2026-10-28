@@ -171,6 +171,30 @@ class _DemotePollAccessLog(logging.Filter):
             return logger.isEnabledFor(logging.DEBUG)
         return True
 
+
+class _NoCacheStaticFiles(StaticFiles):
+    """StaticFiles, but every response tells the browser to revalidate
+    before reusing a cached copy, instead of trusting its own heuristics.
+
+    The touchscreen client (ai_client/web/) is a kiosk tab that typically
+    stays open for weeks without a manual reload, and plain StaticFiles
+    sends no Cache-Control header at all - which doesn't mean "don't
+    cache", it means the browser is free to guess a freshness window from
+    Last-Modified (RFC 7234's heuristic caching), and in practice different
+    files on the same page can each guess a different window. That's how
+    index.html/style.css end up reloading after a deploy while app.js -
+    same deploy, same reload - keeps serving a stale cached copy with no
+    visible sign anything is wrong. cache-control: no-cache forces a
+    conditional GET (If-None-Match) on every load instead; on a LAN that's
+    a near-free 304 when nothing changed, which is a better trade than a
+    kiosk silently running old code until someone thinks to hard-refresh
+    it."""
+
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["cache-control"] = "no-cache"
+        return response
+
 # Where synthesized WAVs are served from, mounted on config.voice_output_dir.
 AUDIO_URL_PREFIX = "/audio"
 # Where rendered graphs are served from, mounted on config.graph_output_dir.
@@ -753,8 +777,9 @@ def make_app(config: Config) -> Starlette:
             ),
             # Catch-all for everything not matched above - must stay last,
             # or it would swallow the /api/* routes and the mounts before
-            # they ever get a chance to match.
-            Mount("/", StaticFiles(directory=CLIENT_WEB_DIR, html=True), name="client"),
+            # they ever get a chance to match. _NoCacheStaticFiles rather
+            # than plain StaticFiles - see its docstring.
+            Mount("/", _NoCacheStaticFiles(directory=CLIENT_WEB_DIR, html=True), name="client"),
         ],
         lifespan=lifespan,
     )
