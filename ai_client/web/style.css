@@ -42,9 +42,10 @@ html, body {
   padding: 0;
   height: 100%;
   width: 100%;
-  /* Fluid rather than a fixed 1920px canvas - this runs on a Full HD
-     screen at minimum, but isn't pinned to exactly that resolution. */
-  min-width: 1920px;
+  /* Fluid, no min-width - a floor here clipped content via overflow:
+     hidden below it instead of letting the flex layout reflow down, so
+     resizing narrower than the floor hid part of the page instead of
+     re-rendering it. Sized for Full HD and up, but isn't forced to it. */
   overflow: hidden;
   font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--field-text);
@@ -440,7 +441,7 @@ body {
   flex: 1 1 180px;
   min-height: 180px;
   padding: 24px 32px;
-  font-size: 26px;
+  font-size: 22px;
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-y: auto;
