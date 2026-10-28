@@ -440,11 +440,7 @@ body {
   flex: 1 1 180px;
   min-height: 180px;
   padding: 24px 32px;
-  /* Scales with the actual screen width instead of staying pinned at
-     26px - 1.35vw lands on ~26px at the 1920px floor and grows from
-     there on a bigger display, clamped so it never gets unreadably
-     small or absurdly large. */
-  font-size: clamp(22px, 1.35vw, 40px);
+  font-size: 26px;
   line-height: 1.4;
   white-space: pre-wrap;
   overflow-y: auto;
