@@ -41,7 +41,10 @@ html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  width: 1920px;
+  width: 100%;
+  /* Fluid rather than a fixed 1920px canvas - this runs on a Full HD
+     screen at minimum, but isn't pinned to exactly that resolution. */
+  min-width: 1920px;
   overflow: hidden;
   font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   color: var(--field-text);
@@ -120,8 +123,8 @@ body {
 /* ---- Sidebar ---- */
 
 #sidebar {
-  flex: 0 0 320px;
-  width: 320px;
+  flex: 0 0 400px;
+  width: 400px;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--sidebar-border);
   overflow-y: auto;
