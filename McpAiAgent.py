@@ -18,6 +18,7 @@ synthesizing audio server-side only helps a caller that can fetch
 """
 
 import asyncio
+import json
 import logging
 import uuid
 from typing import Any
@@ -71,6 +72,21 @@ _DEVICE_PROPERTY = {
 }
 
 _DEVICE_ONLY_SCHEMA = {"type": "object", "properties": _DEVICE_PROPERTY}
+
+_DAYS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "days": {
+            "type": "integer",
+            "description": (
+                "How many local calendar days to report, today first "
+                "(default 2 = today and yesterday)."
+            ),
+            "minimum": 1,
+            "maximum": 31,
+        },
+    },
+}
 
 _POWER_HOURS_SCHEMA = {
     "type": "object",
@@ -164,6 +180,20 @@ class McpAiAgentServer:
                 annotations=_READ_ONLY,
             ),
             Tool(
+                name="outside_daily_extremes",
+                description=(
+                    "Use this for 'today's/yesterday's high and low', 'when was it "
+                    "coldest/warmest', or a daily outside temperature report. "
+                    "Exact data as JSON, not a summary: the current outside "
+                    "temperature plus, for each of the last N local calendar days "
+                    "(midnight to midnight, today first, default 2), the low and "
+                    "high with the exact time each happened. Report these values "
+                    "as given; a day with no readings has low/high null."
+                ),
+                inputSchema=_DAYS_SCHEMA,
+                annotations=_READ_ONLY,
+            ),
+            Tool(
                 name="current_power",
                 description=(
                     "Use this for 'what is X using right now', 'current power "
@@ -209,12 +239,22 @@ class McpAiAgentServer:
         "power_last_hours": "/api/power_last_hours",
     }
 
+    # Endpoints that answer directly with JSON data (no model call, no
+    # accept-then-poll) - the response body is passed through as-is.
+    _DIRECT_ENDPOINTS = {
+        "outside_daily_extremes": "/api/outside_extremes",
+    }
+
     async def _dispatch_tool_call(
         self, tool_name: str, arguments: dict[str, Any]
     ) -> list[TextContent]:
         try:
             if self.dry_run:
                 return [TextContent(type="text", text="{}")]
+            direct = self._DIRECT_ENDPOINTS.get(tool_name)
+            if direct is not None:
+                text = await self._fetch_json(direct, arguments)
+                return [TextContent(type="text", text=text)]
             endpoint = self._ENDPOINTS.get(tool_name)
             if endpoint is None:
                 raise ValueError(f"Unknown tool: {tool_name}")
@@ -223,6 +263,19 @@ class McpAiAgentServer:
         except Exception as e:
             logger.exception("Tool call failed: %s", tool_name)
             return [TextContent(type="text", text=f"Error: {e}")]
+
+    async def _fetch_json(self, endpoint: str, arguments: dict[str, Any]) -> str:
+        """GET a direct-answer endpoint and return its JSON body as compact
+        text, or raise AiAgentCallError on a non-200 answer."""
+        params = {}
+        if arguments.get("days") is not None:
+            params["days"] = str(arguments["days"])
+        async with aiohttp.ClientSession(base_url=self._api_base) as session:
+            async with session.get(endpoint, params=params) as response:
+                body = await response.json()
+                if response.status != 200:
+                    raise AiAgentCallError(body.get("error", f"HTTP {response.status}"))
+        return json.dumps(body, ensure_ascii=False, separators=(",", ":"))
 
     async def _summarize(self, endpoint: str, arguments: dict[str, Any]) -> str:
         """Replay ai_agent_server.py's accept-then-poll contract for one

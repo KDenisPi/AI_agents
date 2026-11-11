@@ -15,14 +15,56 @@ Each run starts a new conversation unless AiAgent is given a session_id,
 which resumes the one saved under that name.
 """
 
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from Config import Config
 from OllamaClient import OllamaClient, session_id_for
-from ai_agent_storage import MetricStats, MetricValue, format_current, format_history, format_stats, format_today_outside
+from ai_agent_storage import HistoryPoint, MetricStats, MetricValue, format_current, format_history, format_stats, format_today_outside
 from ai_agent_storage_clickhouse import MetricStorageClickhouse
 from ai_server_graph import GraphError, MetricGrapher
 from text_to_voice import TextToVoice
+
+
+def _reading(value: float, taken_at: datetime, tz: ZoneInfo) -> dict:
+    """One reading as plain JSON-ready data, its time in `tz`."""
+    return {"value": round(float(value), 2), "taken_at": _to_local(taken_at, tz).isoformat()}
+
+
+def _to_local(taken_at: datetime, tz: ZoneInfo) -> datetime:
+    """The storage layer already converts readings to local time; a naive
+    datetime is taken to be local, an aware one is converted to `tz`."""
+    if taken_at.tzinfo is None:
+        return taken_at.replace(tzinfo=tz)
+    return taken_at.astimezone(tz)
+
+
+def _daily_extremes(points: list[HistoryPoint], tz: ZoneInfo, days: list[date]) -> list[dict]:
+    """Low/high (with the time each happened) per local calendar day, one
+    entry per day in `days`, in that order. A day with no readings gets
+    low/high None and readings 0 rather than being left out, so a caller
+    can tell "no data" apart from "not asked for". On a tie the earliest
+    reading wins."""
+    by_day: dict[date, list[HistoryPoint]] = {}
+    for point in points:
+        by_day.setdefault(_to_local(point.taken_at, tz).date(), []).append(point)
+
+    result = []
+    for day in days:
+        day_points = by_day.get(day, [])
+        if not day_points:
+            result.append({"date": day.isoformat(), "low": None, "high": None, "readings": 0})
+            continue
+        low = min(day_points, key=lambda p: (p.value, p.taken_at))
+        high = max(day_points, key=lambda p: (p.value, -p.taken_at.timestamp()))
+        result.append({
+            "date": day.isoformat(),
+            "low": _reading(low.value, low.taken_at, tz),
+            "high": _reading(high.value, high.taken_at, tz),
+            "readings": len(day_points),
+        })
+    return result
 
 
 def _format_power_stats_with_energy(stats: dict[str, MetricStats], hours: int) -> str:
@@ -158,6 +200,7 @@ class AiAgent:
         model_small.reset() when the history stops being worth carrying.
         """
         self.storage = MetricStorageClickhouse(config)
+        self._local_tz = ZoneInfo(config.local_timezone)
         # One id per model, not one per agent: both clients would otherwise
         # write the same history file. The role suffix keeps them apart even
         # when ollama_model_1 and ollama_model_2 name the same model.
@@ -295,6 +338,41 @@ class AiAgent:
         model call), for a caller (e.g. the web client) that wants to offer
         a picker instead of guessing names."""
         return self.storage.list_power_sensors()
+
+    def outside_daily_extremes(self, days: int = 2) -> dict:
+        """Current outside temperature plus each of the last `days` local
+        calendar days' (today first) low and high, each with the time it
+        happened - plain data, no model call, so a caller gets exact values
+        it can format itself instead of a summary it has to trust.
+
+        Days run midnight to midnight in config.local_timezone (unlike
+        today_outside()'s 08:00-21:00 window, which misses overnight lows).
+        Keyed by outside location, like the rest of the storage layer."""
+        now_local = datetime.now(self._local_tz)
+        today = now_local.date()
+        wanted = [today - timedelta(days=offset) for offset in range(days)]
+        start_local = datetime.combine(wanted[-1], time.min, tzinfo=self._local_tz)
+        # Stored mdatatime is naive UTC - same conversion as today_outside().
+        start = start_local.astimezone(timezone.utc).replace(tzinfo=None)
+        end = now_local.astimezone(timezone.utc).replace(tzinfo=None)
+
+        locations = self.storage.outside_locations
+        history = self.storage.get_history("temperature", start, end, locations)
+        current = self.storage.get_current(locations, ["temperature"])
+
+        result: dict[str, dict] = {}
+        for location in sorted(set(history) | set(current)):
+            latest = current.get(location, {}).get("temperature")
+            result[location] = {
+                "current": _reading(latest.value, latest.taken_at, self._local_tz) if latest else None,
+                "days": _daily_extremes(history.get(location, []), self._local_tz, wanted),
+            }
+        return {
+            "timezone": str(self._local_tz),
+            "generated_at": now_local.isoformat(timespec="seconds"),
+            "metric": "temperature",
+            "locations": result,
+        }
 
     def summarize_history_power_last_hours(
         self, hours: int, graph: bool = False, device: str | None = None

@@ -85,6 +85,23 @@ Client to AI_AGENT:
         instead of guessing names. Answers directly - no model call, no
         accept-then-poll, no request_id.
 
+    GET /api/outside_extremes[?days=<n>]
+        -> 200 {"timezone": "...", "generated_at": "...", "metric": "temperature",
+                "locations": {"<location>": {
+                    "current": {"value": 16.2, "taken_at": "<ISO local>"} | null,
+                    "days": [{"date": "YYYY-MM-DD",
+                              "low":  {"value": ..., "taken_at": "<ISO local>"} | null,
+                              "high": {"value": ..., "taken_at": "<ISO local>"} | null,
+                              "readings": <n>}, ...]}}}
+        -> 400 days is not an integer from 1 to 31
+        -> 500 something went wrong querying the DB
+        Exact outside temperature data, no model call
+        (AiAgent.outside_daily_extremes): the current reading plus the low
+        and high, with the time each happened, for each of the last <days>
+        local calendar days, midnight to midnight, today first. days
+        defaults to 2 (today and yesterday). Answers directly, like
+        /api/power_devices - no accept-then-poll, no request_id.
+
 AI_AGENT to Client (config.ai_client_callback_url, POST - only for a
 request that asked for it with &callback, see above):
     POST /api/response
@@ -805,6 +822,30 @@ def make_app(config: Config) -> Starlette:
             return JSONResponse({"error": str(e)}, status_code=500)
         return JSONResponse({"devices": devices}, status_code=200)
 
+    async def handle_outside_extremes(request: Request) -> Response:
+        # A DB lookup with no model call, so - like handle_power_devices -
+        # this answers directly. It also must not go through the single
+        # poll slot: a scheduled report calling this should never overtake
+        # (or be overtaken by) a user's pending question.
+        _log_request(request)
+        days_param = request.query_params.get("days")
+        if days_param is None:
+            days = 2
+        else:
+            try:
+                days = int(days_param)
+            except ValueError:
+                return JSONResponse({"error": "days must be an integer"}, status_code=400)
+            if not 1 <= days <= 31:
+                return JSONResponse({"error": "days must be from 1 to 31"}, status_code=400)
+        agent = request.app.state.agent
+        try:
+            result = await asyncio.to_thread(agent.outside_daily_extremes, days)
+        except Exception as e:
+            logger.exception("outside_daily_extremes failed")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        return JSONResponse(result, status_code=200)
+
     async def handle_poll(request: Request) -> Response:
         tracked_id = request.app.state.poll_request_id
         if tracked_id is None:
@@ -843,6 +884,7 @@ def make_app(config: Config) -> Starlette:
             Route("/api/outside_last_hours", handle_outside_last_hours, methods=["GET"]),
             Route("/api/power_last_hours", handle_power_last_hours, methods=["GET"]),
             Route("/api/power_devices", handle_power_devices, methods=["GET"]),
+            Route("/api/outside_extremes", handle_outside_extremes, methods=["GET"]),
             Route("/api/poll", handle_poll, methods=["GET"]),
             Mount(
                 AUDIO_URL_PREFIX,
