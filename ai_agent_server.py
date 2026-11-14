@@ -307,7 +307,8 @@ def _wiki_text(body: dict) -> tuple[str, str]:
     Shown: the answer, after a "Read as" line when step 0 changed the
     question - the reader asked one question and this was the answer to
     another wording of it, which they should be able to see. Spoken: the
-    answer alone, since the reader asked it and needs no reminder."""
+    answer alone, since the reader asked it and needs no reminder, with a
+    list's lines joined into one sentence."""
     answer = body.get("answer")
     if not answer:
         status = body.get("status")
@@ -316,7 +317,11 @@ def _wiki_text(body: dict) -> tuple[str, str]:
     shown = answer
     if body.get("question_used") and body.get("question_used") != body.get("question"):
         shown = f'Read as: "{body["question_used"]}"\n\n{answer}'
-    return shown, answer
+    # A list comes one item per line ("8 people:\n- A\n- B"), which reads
+    # well and would be spoken as dashes - joined back into one sentence
+    # for the voice.
+    spoken = answer.replace(":\n- ", ": ").replace("\n- ", ", ")
+    return shown, spoken
 
 
 def _track_pending(app: Starlette, request_id: str | None) -> str:
