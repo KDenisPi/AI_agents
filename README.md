@@ -61,6 +61,30 @@ path (`McpWeatherServer` lives under `/weather`); `McpWeather.py`
 implements the `weather_info` tool by fetching the station's own HTTP
 status endpoint through `HttpClient.py` (aiohttp).
 
+### Wiki MCP server (`McpWiki.py`)
+Questions about people, works and events of history, answered from a
+Wikidata extract by the separate wiki repo (`../wiki`), served under `/wiki`
+by the same `McpMultiHttpServer.py`. Like `McpAiAgent.py` it answers nothing
+itself: it is a thin client of the wiki repo's `agent/wiki_service.py`,
+reached at `config.wiki_url` (`WIKI_URL`, default
+`http://192.168.1.57:8200`), because the pipeline behind it needs duckdb, a
+2.1 GB database and Ollama - none of which belong in the mcp-server
+container. Four tools, one per step of that pipeline:
+
+| Tool | Takes | Returns |
+| --- | --- | --- |
+| `wiki_sentence` | `question` | the question with spelling and grammar fixed |
+| `wiki_intent` | `question` | the question read into a structured intent; nothing looked up |
+| `wiki_query` | a structured intent | the answer sentence, its rows (at most 50) and the SQL |
+| `wiki_ask` | `question` | all of it, with the question actually used beside the one typed |
+
+`wiki_query` is for a client whose own model is good enough to read the
+question itself: its input schema is the intent, so filling in the tool's
+arguments is that reading. The tool list - names, descriptions, schemas -
+comes from the service's `GET /tools` and is cached for five minutes, so
+the schema is defined once, in the wiki repo. Results are the service's
+JSON, passed through.
+
 ### Database
 Two schemas, one per collector generation:
 
@@ -206,7 +230,10 @@ flowchart LR
 
     subgraph McpProc["McpMultiHttpServer.py — :8000"]
         McpWx["McpWeatherServer<br/>tool: weather_info"]
+        McpWiki["McpWikiServer (/wiki)<br/>tools: wiki_sentence, wiki_intent,<br/>wiki_query, wiki_ask"]
     end
+
+    WikiSvc["../wiki agent/wiki_service.py — :8200<br/>(Wikidata extract, DuckDB)"]
 
     CH[("ClickHouse<br/>metering_weather / metering_power")]
     MariaDB[("MariaDB<br/>weather schema (legacy)")]
@@ -245,6 +272,8 @@ flowchart LR
     Hub -- "HTTP GET /devices/all\n(poll, every INTERVAL_SECONDS /\nPOWER_INTERVAL_SECONDS)" --> HubSrcCh
     WxSrcCh -- "MCP call_tool(weather_info)\nover SSE" --> McpWx
     McpWx -- "HTTP GET /api/status" --> Station
+    McpWiki -- "HTTP GET /tools,\nPOST /sentence /intent /query /ask" --> WikiSvc
+    WikiSvc -- "HTTP POST /v1/chat/completions" --> Ollama
     WDbCh -- "HTTP (clickhouse-connect, write user)\nINSERT metering_weather / metering_power" --> CH
 
     Store -- "HTTP (clickhouse-connect, read-only user)\nSELECT" --> CH

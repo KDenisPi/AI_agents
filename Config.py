@@ -128,6 +128,10 @@ class Config:
     # default Docker bridge network with no DNS between them, so this has
     # to be the host's LAN address and published port, not a container name.
     ai_agent_internal_url: str = "http://192.168.1.57:8100"
+    # Where McpWiki.py (also inside the mcp-server container) reaches the wiki
+    # repo's agent/wiki_service.py - the Wikidata question pipeline, a
+    # separate service for the same reason as above and reached the same way.
+    wiki_url: str = "http://192.168.1.57:8200"
 
     # --- Scheduling ---
     interval_seconds: int = 600
@@ -283,6 +287,7 @@ class Config:
             ai_agent_internal_url=text(
                 "AI_AGENT_INTERNAL_URL", defaults.ai_agent_internal_url
             ),
+            wiki_url=text("WIKI_URL", defaults.wiki_url),
             interval_seconds=number("INTERVAL_SECONDS", defaults.interval_seconds),
             power_interval_seconds=number(
                 "POWER_INTERVAL_SECONDS", defaults.power_interval_seconds
