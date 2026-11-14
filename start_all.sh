@@ -3,7 +3,8 @@
 # start_all.sh - bring up everything this project needs after a server
 # restart:
 #   1. sanity-check the docker daemon
-#   2. launch the llama.cpp server (Orpheus TTS model) detached
+#   2. launch the llama.cpp servers detached: the Orpheus TTS model, and the
+#      wiki's stage 2 (intent -> SQL) model
 #   3. warm up the Ollama models used interactively
 #   4. (re)create the docker containers used by run_steps.txt, and the wiki
 #      repo's wiki-server
@@ -27,6 +28,13 @@ LLAMA_MODEL="${LLAMA_MODEL:-/opt/models/gguf/orpheus-3b-0.1-ft-q4_k_m.gguf}"
 LLAMA_PORT="${LLAMA_PORT:-1234}"
 LLAMA_PIDFILE="$LLAMA_CPP_DIR/logs/llama.pid"
 LLAMA_LOG="$LLAMA_CPP_DIR/logs/llama.log"
+# The wiki's fine-tuned stage 2 model, on its own port, pidfile and log -
+# llama-server names a model by its .gguf path, and that path is what the
+# wiki pipeline asks for (sentence_to_sql.py --model2).
+SQL_LLAMA_MODEL="${SQL_LLAMA_MODEL:-/home/denis/projects/models/qwen2.5-coder-7b-instruct.Q4_K_M.gguf}"
+SQL_LLAMA_PORT="${SQL_LLAMA_PORT:-1235}"
+SQL_LLAMA_PIDFILE="${SQL_LLAMA_PIDFILE:-$LLAMA_CPP_DIR/logs/llama-sql.pid}"
+SQL_LLAMA_LOG="${SQL_LLAMA_LOG:-$LLAMA_CPP_DIR/logs/llama-sql.log}"
 # The wiki question service lives in its own repo beside this one; its image
 # is built there (docker/Dockerfile) and its database is mounted read-only.
 WIKI_DIR="${WIKI_DIR:-/home/denis/projects/wiki}"
@@ -105,6 +113,33 @@ else
     )
     sleep 2
     log "llama-server pid $(cat "$LLAMA_PIDFILE" 2>/dev/null || echo '?')"
+fi
+
+# ---------------------------------------------------------------------------
+# 2b. llama.cpp server for the wiki's stage 2 model. wiki-server asks it only
+#     when its composer cannot build a query, so a server that fails to start
+#     costs those questions, not the rest.
+# ---------------------------------------------------------------------------
+if [[ -f "$SQL_LLAMA_PIDFILE" ]] && kill -0 "$(cat "$SQL_LLAMA_PIDFILE")" 2>/dev/null; then
+    log "stage 2 llama-server already running (pid $(cat "$SQL_LLAMA_PIDFILE")), skipping"
+elif ss -ltn 2>/dev/null | grep -q ":$SQL_LLAMA_PORT "; then
+    log "something is already listening on port $SQL_LLAMA_PORT, skipping stage 2 llama-server start"
+elif [[ ! -f "$SQL_LLAMA_MODEL" ]]; then
+    log "WARNING: $SQL_LLAMA_MODEL not found, not starting the stage 2 llama-server"
+else
+    log "starting stage 2 llama-server on port $SQL_LLAMA_PORT"
+    (
+        cd "$LLAMA_CPP_DIR" || exit 1
+        setsid ./build/bin/llama-server \
+            -m "$SQL_LLAMA_MODEL" \
+            -ngl 99 --host 0.0.0.0 --port "$SQL_LLAMA_PORT" \
+            -fa on --cache-type-k q8_0 --cache-type-v q8_0 \
+            >"$SQL_LLAMA_LOG" 2>&1 </dev/null &
+        echo $! >"$SQL_LLAMA_PIDFILE"
+        disown
+    )
+    sleep 2
+    log "stage 2 llama-server pid $(cat "$SQL_LLAMA_PIDFILE" 2>/dev/null || echo '?')"
 fi
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 # stop_all.sh - cleanly shut down everything started by start_all.sh, in
 # exact reverse order, before a server shutdown/restart:
 #   ai-server -> data-collector -> mcp-server -> wiki-server -> clickhouse ->
-#   ollama models -> llama-server
+#   ollama models -> llama-servers (stage 2 SQL, then TTS)
 #
 # Docker containers are stopped (not removed) - start_all.sh removes stopped
 # containers itself before recreating them, matching the original
@@ -16,6 +16,8 @@ set -uo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LLAMA_CPP_DIR="${LLAMA_CPP_DIR:-/home/denis/projects/llama.cpp}"
 LLAMA_PIDFILE="$LLAMA_CPP_DIR/logs/llama.pid"
+SQL_LLAMA_PORT="${SQL_LLAMA_PORT:-1235}"
+SQL_LLAMA_PIDFILE="${SQL_LLAMA_PIDFILE:-$LLAMA_CPP_DIR/logs/llama-sql.pid}"
 
 #OLLAMA_MODELS=("llama3.1-16k:latest" "qwen3.6:latest")
 OLLAMA_MODELS=("llama3.1-16k:latest")
@@ -72,6 +74,33 @@ if command -v ollama >/dev/null 2>&1; then
         fi
     done
 fi
+
+# ---------------------------------------------------------------------------
+# 3a. The wiki's stage 2 llama-server (started after the TTS one, so stopped
+#     before it). Same pidfile-then-port fallback as the TTS block below.
+# ---------------------------------------------------------------------------
+sql_pid=""
+if [[ -f "$SQL_LLAMA_PIDFILE" ]] && kill -0 "$(cat "$SQL_LLAMA_PIDFILE")" 2>/dev/null; then
+    sql_pid="$(cat "$SQL_LLAMA_PIDFILE")"
+else
+    # no pidfile, or a stale one: whoever is listening on the port
+    sql_pid="$(fuser "$SQL_LLAMA_PORT"/tcp 2>/dev/null | xargs)"
+fi
+if [[ -n "$sql_pid" ]]; then
+    log "stopping stage 2 llama-server (pid $sql_pid)"
+    kill -TERM $sql_pid 2>/dev/null
+    for _ in $(seq 1 10); do
+        kill -0 $sql_pid 2>/dev/null || break
+        sleep 1
+    done
+    if kill -0 $sql_pid 2>/dev/null; then
+        log "stage 2 llama-server did not exit in time, sending SIGKILL"
+        kill -KILL $sql_pid 2>/dev/null
+    fi
+else
+    log "stage 2 llama-server not running"
+fi
+rm -f "$SQL_LLAMA_PIDFILE"
 
 # ---------------------------------------------------------------------------
 # 3. llama.cpp server (started first, stopped last)
