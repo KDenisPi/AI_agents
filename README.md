@@ -161,6 +161,7 @@ Endpoints, all following that same accept-then-deliver shape:
 | `GET /api/outside_today` | Today's outside temperature+humidity (08:00-21:00 or now) |
 | `GET /api/outside_last_hours[?hours=<n>]` | Outside temperature+humidity, last `hours` (default 24) |
 | `GET /api/power_last_hours[?hours=<n>]` | Power usage per device, last `hours` (default 24) |
+| `GET /api/wiki?q=<question>` | A question about people, works and events of history, answered by the wiki service (see Wiki MCP server above) |
 
 Any of them takes `&voice[=<name>]` for a spoken answer; the last three
 also take `&graph` for a rendered PNG (one per metric, except
@@ -180,7 +181,10 @@ so it restarts independently of either collector.
   parameterized requests, Audio/Graph toggle switches (persisted to
   `localStorage` across restarts, along with the last-hours selection), a
   metric picker for multi-graph responses, and a "Thinking... m:ss"
-  status. Since a browser page can't accept the `POST /api/response`
+  status. "Ask a question..." under Wikidata opens a dialog with its own
+  touch keyboard (the kiosk has no other) for `/api/wiki`; the answer
+  shows in the usual strip, after a "Read as" line when the question was
+  reworded first. Since a browser page can't accept the `POST /api/response`
   callback, it drives everything through `GET /api/poll` instead, with its
   own client-side timeout independent of server-side processing time.
 - **`ai_client/simple_client.py`** - a throwaway stand-in kept only until

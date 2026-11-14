@@ -77,6 +77,11 @@
         </div>
       </section>
 
+      <section class="panel">
+        <h2>Wikidata</h2>
+        <button id="btn-wiki" class="req-btn">Ask a question&hellip;</button>
+      </section>
+
       <section class="panel" id="metric-panel" hidden>
         <h2>Metric</h2>
         <select id="metric-select"></select>
@@ -92,6 +97,26 @@
       </div>
       <div id="answer-strip"></div>
     </main>
+  </div>
+
+  <!-- The wiki question dialog. inputmode="none" keeps a tap on the box from
+       summoning an OS keyboard over the page's own; a physical keyboard still
+       types into it. The keys are built by app.js (buildKeyboard). -->
+  <div id="wiki-dialog" class="dialog-backdrop" hidden>
+    <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="wiki-dialog-title">
+      <div class="dialog-head">
+        <h2 id="wiki-dialog-title">Ask Wikidata</h2>
+        <span class="dialog-hint">People, works and events of history</span>
+      </div>
+      <input type="text" id="wiki-question" inputmode="none" autocomplete="off"
+             spellcheck="false" maxlength="300"
+             placeholder="e.g. Who were the kings of France when Michel de Montaigne was alive?">
+      <div id="wiki-keyboard" class="keyboard"></div>
+      <div class="dialog-actions">
+        <button type="button" id="wiki-cancel" class="req-btn">Cancel</button>
+        <button type="button" id="wiki-ask" class="req-btn primary">Ask</button>
+      </div>
+    </div>
   </div>
 
   <audio id="audio-player" hidden></audio>

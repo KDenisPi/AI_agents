@@ -77,6 +77,20 @@ Client to AI_AGENT:
         given) on the same axes, not one per metric - there is only the one
         metric (power) here, split across devices instead.
 
+    GET /api/wiki?q=<question>[&request_id=<id>][&voice[=<name>]][&callback]
+        -> 200 accepted, as on /api/current
+        -> 400 no question
+        -> 503 the wiki service (config.wiki_url) is not answering
+        A question about people, works and events of history, answered by
+        the wiki repo's agent/wiki_service.py (../wiki) from its Wikidata
+        extract - the same pipeline McpWiki.py serves as MCP tools. The
+        text is that pipeline's one-sentence answer, after a "Read as: ..."
+        line when its first step re-worded the question, so the reader can
+        see what was actually answered. voice speaks the answer alone, and
+        callback works as on /api/current. No graph. The delivered payload
+        also carries "wiki": the question as typed and as used, the notes
+        on what was filled in, the status and the row count.
+
     GET /api/power_devices
         -> 200 {"devices": ["<name>", ...]}
         -> 500 something went wrong querying the DB
@@ -260,6 +274,49 @@ def _ollama_reachable(url: str, timeout: float = 2) -> bool:
         return response.ok
     except requests.RequestException:
         return False
+
+
+# A wiki question is two model calls and a DuckDB query - typically 5-15s,
+# and wiki_service.py caps a query at 120s and may queue a request for 120s
+# more when its slots are busy.
+_WIKI_TIMEOUT_SECONDS = 300
+
+# What to say when the pipeline ran but has no answer sentence - the status
+# values are sentence_to_sql.stage2_once's.
+_WIKI_NO_ANSWER = {
+    "no_filter": "I could not turn that question into a search - it names no "
+                 "one, no kind of person and no period to look for.",
+    "no_intent": "I could not make sense of that question.",
+    "declined": "I cannot compare those - try asking about each one.",
+    "timeout": "The search took too long and was stopped.",
+}
+
+
+def _wiki_reachable(url: str, timeout: float = 2) -> bool:
+    """The wiki service's counterpart to _ollama_reachable: its /health says
+    whether it is up and has its database."""
+    try:
+        return requests.get(f"{url.rstrip('/')}/health", timeout=timeout).ok
+    except requests.RequestException:
+        return False
+
+
+def _wiki_text(body: dict) -> tuple[str, str]:
+    """(text to show, text to speak) for one /ask answer.
+
+    Shown: the answer, after a "Read as" line when step 0 changed the
+    question - the reader asked one question and this was the answer to
+    another wording of it, which they should be able to see. Spoken: the
+    answer alone, since the reader asked it and needs no reminder."""
+    answer = body.get("answer")
+    if not answer:
+        status = body.get("status")
+        answer = _WIKI_NO_ANSWER.get(status) or (
+            f"The search failed: {body.get('error') or status}")
+    shown = answer
+    if body.get("question_used") and body.get("question_used") != body.get("question"):
+        shown = f'Read as: "{body["question_used"]}"\n\n{answer}'
+    return shown, answer
 
 
 def _track_pending(app: Starlette, request_id: str | None) -> str:
@@ -808,6 +865,91 @@ def make_app(config: Config) -> Starlette:
         if wants_callback:
             await _post_callback(config, payload)
 
+    async def handle_wiki(request: Request) -> Response:
+        _log_request(request)
+        started = time.monotonic()
+        request_id = request.query_params.get("request_id")
+        question = (request.query_params.get("q") or "").strip()
+        if not question:
+            return JSONResponse({"error": "no question - pass it as ?q=<text>"}, status_code=400)
+        # Same reasoning as handle_current above.
+        wants_audio = "voice" in request.query_params
+        voice = request.query_params.get("voice") or None
+        wants_callback = "callback" in request.query_params
+        try:
+            reachable = await asyncio.to_thread(_wiki_reachable, config.wiki_url)
+        except Exception as e:
+            logger.exception("Could not check the wiki service")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        if not reachable:
+            return JSONResponse({"error": "wiki service not available"}, status_code=503)
+
+        tracked_id = _track_pending(request.app, request_id)
+        _spawn(
+            _run_wiki(
+                config,
+                request.app,
+                tracked_id,
+                request_id,
+                question,
+                wants_audio,
+                voice,
+                wants_callback,
+                started,
+                # Captured here because the callback is built long after the
+                # request object is gone.
+                str(request.base_url),
+            )
+        )
+        body = {"accepted": True}
+        if request_id:
+            body["request_id"] = request_id
+        return JSONResponse(body, status_code=200)
+
+    async def _run_wiki(
+        config: Config,
+        app: Starlette,
+        tracked_id: str,
+        request_id: str | None,
+        question: str,
+        wants_audio: bool,
+        voice: str | None,
+        wants_callback: bool,
+        started: float,
+        base_url: str,
+    ) -> None:
+        agent = app.state.agent
+        try:
+            response = await asyncio.to_thread(
+                requests.post,
+                f"{config.wiki_url.rstrip('/')}/ask",
+                json={"question": question},
+                timeout=_WIKI_TIMEOUT_SECONDS,
+            )
+            body = response.json()
+            if response.status_code != 200:
+                raise RuntimeError(body.get("error") or f"wiki service: HTTP {response.status_code}")
+            text, spoken = _wiki_text(body)
+            payload = {
+                "text": text,
+                "audio_url": None,
+                "graphs": None,
+                "wiki": {key: body.get(key) for key in (
+                    "question", "question_used", "step0_note", "notes", "status", "row_count")},
+            }
+        except Exception as e:
+            logger.exception("wiki question failed")
+            payload = {"error": str(e)}
+        else:
+            if wants_audio:
+                await _add_audio(config, agent, payload, spoken, voice, base_url)
+        if request_id:
+            payload["request_id"] = request_id
+        _store_result(app, tracked_id, payload)
+        _log_done("/api/wiki", request_id, payload, started)
+        if wants_callback:
+            await _post_callback(config, payload)
+
     async def handle_power_devices(request: Request) -> Response:
         # Unlike every other handler here, this needs no model call - just a
         # DB lookup - so it answers directly instead of going through the
@@ -885,6 +1027,7 @@ def make_app(config: Config) -> Starlette:
             Route("/api/power_last_hours", handle_power_last_hours, methods=["GET"]),
             Route("/api/power_devices", handle_power_devices, methods=["GET"]),
             Route("/api/outside_extremes", handle_outside_extremes, methods=["GET"]),
+            Route("/api/wiki", handle_wiki, methods=["GET"]),
             Route("/api/poll", handle_poll, methods=["GET"]),
             Mount(
                 AUDIO_URL_PREFIX,

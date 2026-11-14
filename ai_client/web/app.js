@@ -34,6 +34,13 @@ const deviceRow = document.getElementById("device-row");
 const deviceSelect = document.getElementById("device-select");
 const rangeSection = document.getElementById("range-section");
 
+const btnWiki = document.getElementById("btn-wiki");
+const wikiDialog = document.getElementById("wiki-dialog");
+const wikiQuestion = document.getElementById("wiki-question");
+const wikiKeyboard = document.getElementById("wiki-keyboard");
+const wikiAsk = document.getElementById("wiki-ask");
+const wikiCancel = document.getElementById("wiki-cancel");
+
 const metricPanel = document.getElementById("metric-panel");
 const metricSelect = document.getElementById("metric-select");
 
@@ -47,7 +54,7 @@ const audioPlayer = document.getElementById("audio-player");
 
 const lockable = [
   btnCurrent, btnBattery, btnOutsideToday, btnLastHours, hoursSelect, btnRange,
-  fromDateInput, toDateInput, audioToggle, graphToggle, deviceSelect,
+  fromDateInput, toDateInput, audioToggle, graphToggle, deviceSelect, btnWiki,
   ...datasourceButtons, ...powerModeButtons,
 ];
 
@@ -115,6 +122,12 @@ function init() {
   powerModeButtons.forEach((btn) => {
     btn.addEventListener("click", () => setPowerMode(btn.dataset.mode));
   });
+
+  btnWiki.addEventListener("click", openWikiDialog);
+  wikiAsk.addEventListener("click", askWiki);
+  wikiCancel.addEventListener("click", closeWikiDialog);
+  wikiQuestion.addEventListener("keydown", onWikiQuestionKey);
+  buildKeyboard();
 
   audioToggle.addEventListener("change", saveSettings);
   graphToggle.addEventListener("change", saveSettings);
@@ -240,6 +253,7 @@ function applySettings(settings) {
   // The device list isn't loaded yet at this point (see loadPowerDevices) -
   // stash the name and let it apply the value once the real options exist.
   if (settings.device) pendingDeviceSetting = settings.device;
+  if (typeof settings.wikiQuestion === "string") wikiQuestion.value = settings.wikiQuestion;
 }
 
 function saveSettings() {
@@ -253,6 +267,7 @@ function saveSettings() {
         dataSource,
         powerMode,
         device: deviceSelect.value,
+        wikiQuestion: wikiQuestion.value,
       })
     );
   } catch (err) {
@@ -375,6 +390,166 @@ function hoursForRange(fromStr, toStr) {
   if (to < from) return null;
   const days = Math.round((to - from) / 86400000) + 1;
   return days * 24;
+}
+
+// ---- Wiki questions: the dialog, its keyboard, and /api/wiki ----
+
+// The touchscreen has no keyboard of its own, so the dialog draws one.
+// "shift" capitalises the next letter only; "mode" switches between the
+// two layouts. Keys insert at the cursor, so a tap inside the question
+// moves where the next letter goes.
+const KEYBOARD_LAYOUTS = {
+  letters: [
+    ["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"],
+    ["a", "s", "d", "f", "g", "h", "j", "k", "l", "'"],
+    ["shift", "z", "x", "c", "v", "b", "n", "m", "-", "back"],
+    ["mode", "space", ",", ".", "?", "clear"],
+  ],
+  symbols: [
+    ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+    ["(", ")", ":", ";", "/", "&", "\"", "!", "'", "-"],
+    ["#", "%", "+", "=", "@", "*", "_", "back"],
+    ["mode", "space", ",", ".", "?", "clear"],
+  ],
+};
+const KEY_LABELS = {
+  shift: "\u21e7", back: "\u232b", space: "space", clear: "Clear",
+};
+let keyboardLayout = "letters";
+let shiftOn = false;
+
+function buildKeyboard() {
+  wikiKeyboard.innerHTML = "";
+  for (const row of KEYBOARD_LAYOUTS[keyboardLayout]) {
+    const rowEl = document.createElement("div");
+    rowEl.className = "kb-row";
+    for (const key of row) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.tabIndex = -1;
+      btn.className = "kb-key";
+      btn.dataset.key = key;
+      if (key === "mode") {
+        btn.textContent = keyboardLayout === "letters" ? "123" : "ABC";
+        btn.classList.add("wide");
+      } else if (key in KEY_LABELS) {
+        btn.textContent = KEY_LABELS[key];
+        btn.classList.add(key === "space" ? "space" : "wide");
+      } else {
+        btn.textContent = key;
+      }
+      btn.addEventListener("click", () => pressKey(key));
+      rowEl.appendChild(btn);
+    }
+    wikiKeyboard.appendChild(rowEl);
+  }
+  showShift();
+}
+
+function showShift() {
+  wikiKeyboard.querySelectorAll(".kb-key").forEach((btn) => {
+    const key = btn.dataset.key;
+    if (key === "shift") btn.classList.toggle("on", shiftOn);
+    if (keyboardLayout === "letters" && key.length === 1 && /[a-z]/.test(key)) {
+      btn.textContent = shiftOn ? key.toUpperCase() : key;
+    }
+  });
+}
+
+// A question starts with a capital, and so does one after ". " or "? " -
+// the same as a phone keyboard, so names after them need no Shift either.
+function autoShift() {
+  const before = wikiQuestion.value.slice(0, wikiQuestion.selectionStart ?? wikiQuestion.value.length);
+  shiftOn = before.trim() === "" || /[.?!]\s+$/.test(before);
+  showShift();
+}
+
+function insertText(text) {
+  const value = wikiQuestion.value;
+  const start = wikiQuestion.selectionStart ?? value.length;
+  const end = wikiQuestion.selectionEnd ?? value.length;
+  if (value.length - (end - start) + text.length > wikiQuestion.maxLength) return;
+  wikiQuestion.value = value.slice(0, start) + text + value.slice(end);
+  const caret = start + text.length;
+  wikiQuestion.setSelectionRange(caret, caret);
+}
+
+function pressKey(key) {
+  if (key === "mode") {
+    keyboardLayout = keyboardLayout === "letters" ? "symbols" : "letters";
+    buildKeyboard();
+  } else if (key === "shift") {
+    shiftOn = !shiftOn;
+    showShift();
+  } else if (key === "back") {
+    const start = wikiQuestion.selectionStart ?? wikiQuestion.value.length;
+    const end = wikiQuestion.selectionEnd ?? start;
+    if (start !== end) {
+      insertText("");
+    } else if (start > 0) {
+      wikiQuestion.setSelectionRange(start - 1, start);
+      insertText("");
+    }
+    autoShift();
+  } else if (key === "clear") {
+    wikiQuestion.value = "";
+    autoShift();
+  } else {
+    let text = key === "space" ? " " : key;
+    if (shiftOn && /[a-z]/.test(text)) text = text.toUpperCase();
+    insertText(text);
+    autoShift();
+  }
+  // a key is a button, and pressing it took the focus - give it back so the
+  // cursor stays visible and a physical keyboard keeps working
+  wikiQuestion.focus();
+}
+
+function openWikiDialog() {
+  if (locked) return;
+  wikiDialog.hidden = false;
+  keyboardLayout = "letters";
+  buildKeyboard();
+  const end = wikiQuestion.value.length;
+  wikiQuestion.focus();
+  wikiQuestion.setSelectionRange(end, end);
+  autoShift();
+}
+
+function closeWikiDialog() {
+  wikiDialog.hidden = true;
+}
+
+function onWikiQuestionKey(event) {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    askWiki();
+  } else if (event.key === "Escape") {
+    event.preventDefault();
+    closeWikiDialog();
+  }
+}
+
+function askWiki() {
+  const question = wikiQuestion.value.trim();
+  if (!question) {
+    wikiQuestion.focus();
+    return;
+  }
+  closeWikiDialog();
+  saveSettings();
+  requestWiki(question);
+}
+
+// No graph - the answer is a sentence and its rows. Audio speaks the
+// answer; the "Read as" line the server puts before it, when the question
+// was reworded, is shown but not read out.
+function requestWiki(question) {
+  if (locked) return;
+  const requestId = buildRequestId();
+  const params = { request_id: requestId, q: question };
+  if (audioToggle.checked) params.voice = true;
+  startRequest(buildUrl("/api/wiki", params), requestId);
 }
 
 // ---- Request lifecycle: send, poll, resolve ----
