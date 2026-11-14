@@ -580,3 +580,10 @@ body {
   min-width: 170px;
   margin: 0;
 }
+
+/* .field-row's display:flex outranks the hidden attribute's display:none,
+   so updatePowerUi() hiding the Power and Device rows left them showing
+   for the Weather source. */
+.field-row[hidden] {
+  display: none;
+}
