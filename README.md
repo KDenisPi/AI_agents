@@ -85,6 +85,15 @@ comes from the service's `GET /tools` and is cached for five minutes, so
 the schema is defined once, in the wiki repo. Results are the service's
 JSON, passed through.
 
+OpenClaw's Telegram bot reaches it the same way as the other servers here:
+`mcp.servers.Wiki` in `~/.openclaw/openclaw.json`
+(`http://192.168.1.57:8000/wiki/mcp`, only `wiki_ask` exposed, 300 s
+timeout). A Telegram message starting with `wiki:` goes to `wiki_ask` with
+the rest of the text as typed, and the bot replies with the service's
+answer copied exactly, after a "Read as" line when the question was
+reworded. That rule is in the `home` agent's
+`~/.openclaw/workspace-home/AGENTS.md`, which Telegram is bound to.
+
 ### Database
 Two schemas, one per collector generation:
 
