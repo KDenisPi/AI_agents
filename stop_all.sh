@@ -2,7 +2,8 @@
 #
 # stop_all.sh - cleanly shut down everything started by start_all.sh, in
 # exact reverse order, before a server shutdown/restart:
-#   ai-server -> data-collector -> mcp-server -> clickhouse -> ollama models -> llama-server
+#   ai-server -> data-collector -> mcp-server -> wiki-server -> clickhouse ->
+#   ollama models -> llama-server
 #
 # Docker containers are stopped (not removed) - start_all.sh removes stopped
 # containers itself before recreating them, matching the original
@@ -19,13 +20,13 @@ LLAMA_PIDFILE="$LLAMA_CPP_DIR/logs/llama.pid"
 #OLLAMA_MODELS=("llama3.1-16k:latest" "qwen3.6:latest")
 OLLAMA_MODELS=("llama3.1-16k:latest")
 # Exact reverse of start_all.sh's start order:
-#   models -> clickhouse -> mcp-server -> data-collector -> ai-server
-# so: ai-server -> data-collector -> mcp-server -> clickhouse -> models
+#   models -> clickhouse -> wiki-server -> mcp-server -> data-collector -> ai-server
+# so: ai-server -> data-collector -> mcp-server -> wiki-server -> clickhouse -> models
 #
 # App containers run our own Python code, so they're stopped with SIGINT
 # (== KeyboardInterrupt) to let their try/except cleanup run. ClickHouse is
 # a stock image that shuts down cleanly on docker stop's default SIGTERM.
-APP_CONTAINERS=(ai-server data-collector mcp-server)
+APP_CONTAINERS=(ai-server data-collector mcp-server wiki-server)
 DB_CONTAINERS=(iot-clickhouse-server)
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }

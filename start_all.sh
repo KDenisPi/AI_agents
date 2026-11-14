@@ -5,7 +5,8 @@
 #   1. sanity-check the docker daemon
 #   2. launch the llama.cpp server (Orpheus TTS model) detached
 #   3. warm up the Ollama models used interactively
-#   4. (re)create the 4 docker containers used by run_steps.txt
+#   4. (re)create the docker containers used by run_steps.txt, and the wiki
+#      repo's wiki-server
 #
 # Models are started first and the app containers last, since ai-server /
 # mcp-server talk to Ollama and the llama-server on startup.
@@ -26,6 +27,10 @@ LLAMA_MODEL="${LLAMA_MODEL:-/opt/models/gguf/orpheus-3b-0.1-ft-q4_k_m.gguf}"
 LLAMA_PORT="${LLAMA_PORT:-1234}"
 LLAMA_PIDFILE="$LLAMA_CPP_DIR/logs/llama.pid"
 LLAMA_LOG="$LLAMA_CPP_DIR/logs/llama.log"
+# The wiki question service lives in its own repo beside this one; its image
+# is built there (docker/Dockerfile) and its database is mounted read-only.
+WIKI_DIR="${WIKI_DIR:-/home/denis/projects/wiki}"
+WIKI_DATA_DIR="${WIKI_DATA_DIR:-/home/denis/projects/wiki_data}"
 
 #OLLAMA_MODELS=("llama3.1-16k:latest" "qwen3.6:latest")
 OLLAMA_MODELS=("llama3.1-16k:latest")
@@ -135,6 +140,19 @@ if wait_for_http "http://localhost:8123/ping" 60; then
 else
     log "WARNING: ClickHouse did not respond within 60s, continuing anyway"
 fi
+
+# The wiki question service: the backend of mcp-server's /wiki tools and
+# ai-server's /api/wiki, so it starts before both. agent/*.py imports
+# OllamaClient from ../AI_agents, so this repo is mounted beside the wiki
+# one (read-only - nothing there is the wiki's to write). Its log rotates
+# because the pipeline logs every row of every answer.
+start_container wiki-server \
+    docker run -d --name wiki-server -u 1000:1000 -p 8200:8200 \
+        --log-opt max-size=20m --log-opt max-file=3 \
+        -v "$WIKI_DIR:/projects/wiki" \
+        -v "$PROJECT_DIR:/projects/AI_agents:ro" \
+        -v "$WIKI_DATA_DIR:/data:ro" \
+        wiki-server:latest python -u agent/wiki_service.py --db /data/run7/wiki.duckdb
 
 start_container mcp-server \
     docker run -v "$PROJECT_DIR:/app" -v "$PROJECT_DIR/logs:/app/logs:rw" \

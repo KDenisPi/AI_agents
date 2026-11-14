@@ -2,6 +2,7 @@ docker rm mcp-server
 docker rm data-collector
 docker rm iot-clickhouse-server
 docker rm ai-server
+docker rm wiki-server
 
 ollama run llama3.1:8b ""
 ollama run qwen3.6:latest ""
@@ -15,5 +16,8 @@ docker run -d --name=iot-clickhouse-server -p 8123:8123 -p 9000:9000 --ulimit no
 docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name mcp-server -p 8000:8000 ai-agent:latest python -u McpMultiHttpServer.py
 docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -d -w /app --name data-collector ai-agent:latest python -u CollectorClickhouse.py
 docker run -v $(pwd):/app -v $(pwd)/logs:/app/logs:rw -u 1000:1000 -w /app --name ai-server -d --gpus all -p 8100:8100 ai-server-gpu:latest python -u ai_agent_server.py
+
+#wiki question service, image built in ../wiki (docker build -f docker/Dockerfile -t wiki-server:latest .)
+docker run -d --name wiki-server -u 1000:1000 -p 8200:8200 --log-opt max-size=20m --log-opt max-file=3 -v /home/denis/projects/wiki:/projects/wiki -v $(pwd):/projects/AI_agents:ro -v /home/denis/projects/wiki_data:/data:ro wiki-server:latest python -u agent/wiki_service.py --db /data/run7/wiki.duckdb
 
 
